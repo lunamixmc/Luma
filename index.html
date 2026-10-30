@@ -1,0 +1,5023 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#080b10" />
+<title>Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+<!--
+  ════════════════════════════════════════════════════════════════════════
+   A complete chat app in one file: username/password accounts, direct
+   messages, group chats and live updates, backed by Supabase.
+
+   To run it: open this file in a browser, or serve the folder
+   (see README.md). No build step, no dependencies to install.
+  ════════════════════════════════════════════════════════════════════════
+-->
+
+<style>
+  /* ══════════════════════════════════════════════════════════════════
+     DESIGN TOKENS — retheme here
+     ══════════════════════════════════════════════════════════════════ */
+  :root {
+    /* Backgrounds */
+    --bg-dark: #080b10;
+    --bg-panel: rgba(255, 255, 255, 0.04);
+    --bg-panel-hover: rgba(255, 255, 255, 0.07);
+    --bg-input: rgba(0, 0, 0, 0.4);
+
+    /* Borders */
+    --border-glass: rgba(255, 255, 255, 0.10);
+    --border-glass-hover: rgba(255, 255, 255, 0.20);
+    --border-subtle: rgba(255, 255, 255, 0.06);
+
+    /* Accents */
+    --accent-purple: #a78bfa;
+    --accent-cyan: #67e8f9;
+    --accent-green: #86efac;
+    --accent-purple-dim: rgba(167, 139, 250, 0.15);
+    --accent-cyan-dim: rgba(103, 232, 249, 0.15);
+    --accent-green-dim: rgba(134, 239, 172, 0.15);
+    --accent-purple-glow: rgba(167, 139, 250, 0.4);
+    --accent-cyan-glow: rgba(103, 232, 249, 0.4);
+    --accent-green-glow: rgba(134, 239, 172, 0.4);
+
+    /* Text */
+    --text-primary: #f0f0f5;
+    --text-secondary: rgba(240, 240, 245, 0.62);
+    --text-tertiary: rgba(240, 240, 245, 0.34);
+
+    /* Type */
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-body: 'Space Mono', monospace;
+
+    /* Shape & motion */
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 22px;
+    --radius-full: 9999px;
+    --blur: 20px;
+    --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.3);
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --speed: 300ms;
+
+    /* Internal aliases kept so the app's markup reads the same */
+    --bg: var(--bg-dark);
+    --panel: var(--bg-panel);
+    --panel-2: var(--bg-input);
+    --bubble: rgba(255, 255, 255, 0.05);
+    --border: var(--border-glass);
+    --text: var(--text-primary);
+    --muted: var(--text-secondary);
+    --accent: var(--accent-purple);
+    --accent-soft: var(--accent-purple-dim);
+    --danger: #ff8a8a;
+
+    color-scheme: dark;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     BASE
+     ══════════════════════════════════════════════════════════════════ */
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body, #root { height: 100%; margin: 0; }
+
+  body {
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  body.has-cursor,
+  body.has-cursor button,
+  body.has-cursor a { cursor: none; }
+  body.has-cursor input,
+  body.has-cursor textarea { cursor: text; }
+
+  ::selection { background: var(--accent-purple); color: var(--bg-dark); }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--accent-purple-dim);
+    border-radius: var(--radius-full);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent-purple); }
+  * { scrollbar-width: thin; scrollbar-color: var(--accent-purple-dim) transparent; }
+
+  button, input, textarea { font: inherit; color: inherit; }
+  button { border: none; background: none; }
+  h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.03em; }
+  :focus-visible { outline: 2px solid var(--accent-purple); outline-offset: 2px; }
+
+  .muted { color: var(--text-secondary); font-size: 0.76rem; font-family: var(--font-mono); }
+  .accent-purple { color: var(--accent-purple); }
+  .accent-cyan { color: var(--accent-cyan); }
+  .accent-green { color: var(--accent-green); }
+
+  /* ══════════════════════════════════════════════════════════════════
+     BACKGROUND EFFECTS
+     ══════════════════════════════════════════════════════════════════ */
+  .bg-orbs {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+  .orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
+    opacity: 0.32;
+    will-change: transform;
+  }
+  .orb-1 { width: 520px; height: 520px; background: var(--accent-purple); top: -14%; left: -8%; animation: drift1 26s ease-in-out infinite; }
+  .orb-2 { width: 420px; height: 420px; background: var(--accent-cyan); top: 38%; right: -12%; animation: drift2 32s ease-in-out infinite; }
+  .orb-3 { width: 380px; height: 380px; background: var(--accent-green); bottom: -12%; left: 26%; animation: drift3 22s ease-in-out infinite; }
+  @keyframes drift1 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    25% { transform: translate(80px, 60px) scale(1.1); }
+    50% { transform: translate(-40px, 120px) scale(0.9); }
+    75% { transform: translate(60px, -30px) scale(1.05); }
+  }
+  @keyframes drift2 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(-100px, -80px) scale(1.15); }
+    66% { transform: translate(50px, 60px) scale(0.85); }
+  }
+  @keyframes drift3 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(70px, -90px) scale(1.1); }
+  }
+
+  .noise-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.03;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 256px 256px;
+  }
+
+  .cursor-dot {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent-purple);
+    pointer-events: none;
+    z-index: 1000;
+    mix-blend-mode: screen;
+    box-shadow: 0 0 20px var(--accent-purple-glow), 0 0 60px var(--accent-purple-dim);
+    transition: width 0.2s, height 0.2s, background 0.3s;
+    will-change: transform;
+  }
+  .cursor-dot.hover {
+    width: 44px;
+    height: 44px;
+    background: rgba(167, 139, 250, 0.16);
+    border: 1px solid var(--accent-purple);
+  }
+  @media (hover: none) { .cursor-dot { display: none; } }
+
+  /* ══════════════════════════════════════════════════════════════════
+     PRIMITIVES
+     ══════════════════════════════════════════════════════════════════ */
+  .glass {
+    background: var(--bg-panel);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-glass);
+    position: relative;
+    overflow: hidden;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--accent-green-glow); }
+    50% { opacity: 0.4; box-shadow: 0 0 12px 4px var(--accent-green-glow); }
+  }
+
+  /* ── buttons ─────────────────────────────────────────────────── */
+  .primary-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--accent-purple);
+    border: none;
+    border-radius: var(--radius-full);
+    color: var(--bg-dark);
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    padding: 0.7rem 1.35rem;
+    cursor: pointer;
+    box-shadow: 0 0 24px var(--accent-purple-dim);
+    transition: transform var(--speed) var(--ease), box-shadow var(--speed) var(--ease), opacity var(--speed) var(--ease);
+  }
+  .primary-button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 0 40px var(--accent-purple-glow), 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+  .primary-button:active:not(:disabled) { transform: translateY(0); }
+  .primary-button:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+  .primary-button.small { padding: 0.6rem 0.9rem; font-size: 0.76rem; width: 100%; }
+
+  .ghost-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.4rem 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    white-space: nowrap;
+    transition: color var(--speed) var(--ease), border-color var(--speed) var(--ease), background var(--speed) var(--ease), transform var(--speed) var(--ease);
+  }
+  .ghost-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-panel-hover);
+    border-color: var(--border-glass-hover);
+    transform: translateY(-1px);
+  }
+
+  .plus { margin-right: 0.3rem; }
+
+  /* ══════════════════════════════════════════════════════════════════
+     CENTRED SCREENS — auth / setup / boot
+     ══════════════════════════════════════════════════════════════════ */
+  .auth {
+    position: relative;
+    z-index: 2;
+    min-height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 1.5rem;
+    overflow-y: auto;
+  }
+  .auth::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    background-image: radial-gradient(circle, var(--text-primary) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse at center, #000 10%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 10%, transparent 70%);
+  }
+
+  .auth-card {
+    position: relative;
+    width: min(430px, 100%);
+    background: rgba(10, 14, 20, 0.62);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--border-glass);
+    border-radius: 26px;
+    padding: 2rem 1.85rem 1.6rem;
+    box-shadow: var(--shadow-glass), 0 0 80px rgba(167, 139, 250, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .auth-card::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(140deg, rgba(167, 139, 250, 0.45), transparent 40%, transparent 65%, rgba(103, 232, 249, 0.28));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .brand { display: flex; gap: 0.9rem; align-items: center; margin-bottom: 1.35rem; }
+  .brand-mark {
+    flex: none;
+    width: 50px;
+    height: 50px;
+    display: grid;
+    place-items: center;
+    font-size: 1.4rem;
+    border-radius: 16px;
+    background: var(--accent-purple-dim);
+    border: 1px solid var(--accent-purple-dim);
+    box-shadow: 0 0 30px rgba(167, 139, 250, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  .brand h1 {
+    font-size: 1.6rem;
+    margin: 0 0 0.3rem;
+    line-height: 1;
+    letter-spacing: -0.05em;
+  }
+  .brand p {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.01em;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--border-subtle);
+    padding: 4px;
+    border-radius: var(--radius-full);
+    margin-bottom: 1.2rem;
+  }
+  .tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-full);
+    padding: 0.5rem 0.5rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    transition: color var(--speed) var(--ease), background var(--speed) var(--ease), box-shadow var(--speed) var(--ease);
+  }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active {
+    background: var(--accent-purple-dim);
+    color: var(--accent-purple);
+    box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.25), 0 0 20px rgba(167, 139, 250, 0.1);
+  }
+
+  .auth-form { display: flex; flex-direction: column; gap: 0.85rem; }
+  .auth-form label, .modal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+  }
+  .auth-form input, .modal-field input, .modal-scroll input {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 0.72rem 0.85rem;
+    font-family: var(--font-body);
+    font-size: 0.88rem;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  }
+  .auth-form input::placeholder, .modal-field input::placeholder,
+  .modal-scroll input::placeholder,
+  .composer textarea::placeholder { color: var(--text-tertiary); }
+  .auth-form input:focus, .modal-field input:focus, .modal-scroll input:focus,
+  .composer textarea:focus {
+    border-color: rgba(167, 139, 250, 0.55);
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow: 0 0 0 3px var(--accent-purple-dim);
+  }
+
+  .error {
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    margin: 0;
+    line-height: 1.5;
+    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 138, 138, 0.08);
+    border: 1px solid rgba(255, 138, 138, 0.22);
+  }
+  .error:empty { display: none; }
+
+  .hint {
+    display: block;
+    width: fit-content;
+    margin: 1.15rem auto 0;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-align: center;
+    padding: 6px 16px;
+    border: 1px dashed var(--border-glass);
+    border-radius: var(--radius-md);
+    line-height: 1.6;
+  }
+
+  .setup-steps {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1.8;
+  }
+  .setup-steps li::marker { color: var(--accent-purple); }
+  .setup-steps code, .hint code, .note code {
+    background: var(--accent-purple-dim);
+    border-radius: 5px;
+    padding: 0.1rem 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    color: var(--accent-purple);
+  }
+  .note {
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    line-height: 1.7;
+    margin: 0 0 1rem;
+    padding: 0.7rem 0.8rem;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .boot {
+    position: relative;
+    z-index: 2;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .boot::before {
+    content: '';
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-purple-dim);
+    border-top-color: var(--accent-purple);
+    animation: spin 0.9s linear infinite;
+    box-shadow: 0 0 30px var(--accent-purple-dim);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ══════════════════════════════════════════════════════════════════
+     APP SHELL — floating glass panels
+     ══════════════════════════════════════════════════════════════════ */
+  .app-shell {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: 326px 1fr;
+    gap: 14px;
+    height: 100%;
+    padding: 14px;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     SIDEBAR
+     ══════════════════════════════════════════════════════════════════ */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: rgba(10, 14, 20, 0.58);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-glass), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    padding: 0.95rem 0.75rem 0.9rem 0.95rem;
+    border-bottom: 1px solid var(--border-subtle);
+    position: relative;
+  }
+  .sidebar-header::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    height: 1px;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, var(--accent-purple), transparent);
+    opacity: 0.55;
+  }
+
+  .me { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+  .me-text { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+  .me-text strong {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: -0.02em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .me-text .muted {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+  }
+  .me-text .muted::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    box-shadow: 0 0 10px var(--accent-green-glow);
+    animation: blink 2s ease-in-out infinite;
+  }
+
+  .avatar {
+    flex: none;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-glass);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+  }
+  .avatar-me {
+    background: linear-gradient(145deg, var(--accent-purple), #7c5cf0);
+    color: var(--bg-dark);
+    border-color: rgba(167, 139, 250, 0.5);
+    box-shadow: 0 0 22px rgba(167, 139, 250, 0.3);
+  }
+  .avatar-group {
+    background: var(--accent-cyan-dim);
+    color: var(--accent-cyan);
+    border-color: rgba(103, 232, 249, 0.28);
+  }
+  .avatar-small { width: 28px; height: 28px; font-size: 0.6rem; border-radius: 9px; }
+  .avatar.large {
+    width: 58px;
+    height: 58px;
+    font-size: 1rem;
+    border-radius: 18px;
+  }
+
+  .sidebar-actions { padding: 0.85rem 0.85rem 0.7rem; }
+
+  .conversation-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 0.6rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .empty-sidebar { padding: 1.6rem 1rem; text-align: center; }
+  .empty-sidebar p { margin: 0.2rem 0; }
+
+  .conversation {
+    width: 100%;
+    display: flex;
+    gap: 0.7rem;
+    align-items: center;
+    padding: 0.55rem 0.6rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--speed) var(--ease), border-color var(--speed) var(--ease), transform var(--speed) var(--ease);
+  }
+  .conversation:hover {
+    background: var(--bg-panel-hover);
+    border-color: var(--border-subtle);
+    transform: translateX(2px);
+  }
+  .conversation.active {
+    background: linear-gradient(100deg, var(--accent-purple-dim), rgba(167, 139, 250, 0.02));
+    border-color: rgba(167, 139, 250, 0.3);
+    box-shadow: inset 2px 0 0 var(--accent-purple);
+  }
+  .conversation-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .conversation-top { display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
+  .conversation-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.86rem;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .conversation-time {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--text-tertiary);
+    flex: none;
+    letter-spacing: 0.02em;
+  }
+  .conversation-preview {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     CHAT PANE
+     ══════════════════════════════════════════════════════════════════ */
+  .chat-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    background:
+      radial-gradient(720px 380px at 88% -8%, rgba(167, 139, 250, 0.12), transparent 62%),
+      radial-gradient(620px 380px at 4% 104%, rgba(103, 232, 249, 0.09), transparent 60%),
+      rgba(10, 14, 20, 0.56);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-glass), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+  }
+
+  .chat-header {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(255, 255, 255, 0.015);
+    position: relative;
+  }
+  .chat-header::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    height: 1px;
+    width: 45%;
+    background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+    opacity: 0.4;
+  }
+  .chat-header-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .chat-header-text strong {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: -0.02em;
+  }
+  .chat-header-text .muted {
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .back-button { display: none; }
+
+  .messages {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.4rem clamp(1rem, 4vw, 2.4rem) 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    scroll-behavior: smooth;
+  }
+
+  .day-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: var(--text-tertiary);
+    margin: 1.3rem 0 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+  .day-divider::before,
+  .day-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-glass), transparent);
+  }
+
+  .message-row {
+    display: flex;
+    gap: 0.55rem;
+    align-items: flex-end;
+    max-width: min(660px, 84%);
+    animation: msg-in 320ms var(--ease) both;
+  }
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  .message-row.run-start { margin-top: 0.6rem; }
+  .message-row.mine { margin-left: auto; justify-content: flex-end; }
+  .message-body { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+  .message-author {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-cyan);
+    padding-left: 0.2rem;
+    opacity: 0.85;
+  }
+  .bubble {
+    background: rgba(255, 255, 255, 0.045);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--border-glass);
+    border-radius: 18px 18px 18px 6px;
+    padding: 0.55rem 0.85rem;
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    line-height: 1.55;
+    color: rgba(240, 240, 245, 0.92);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+  }
+  .bubble-mine {
+    background: linear-gradient(140deg, #b3a0ff, #977ef7);
+    border-color: rgba(167, 139, 250, 0.55);
+    border-radius: 18px 18px 6px 18px;
+    color: #0b0e14;
+    font-weight: 700;
+    box-shadow: 0 6px 28px rgba(167, 139, 250, 0.22);
+  }
+
+  .empty-chat {
+    margin: auto;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 2rem;
+    max-width: 420px;
+  }
+  .empty-chat h2 {
+    margin: 0.7rem 0 0;
+    font-size: 1.5rem;
+    letter-spacing: -0.04em;
+  }
+  .empty-chat p {
+    margin: 0;
+    max-width: 34ch;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    line-height: 1.8;
+  }
+
+  .placeholder {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+  }
+  /* The empty state nests a second .chat-pane inside the first; strip its
+     panel chrome so it doesn't draw a card within a card. */
+  .placeholder .placeholder {
+    background: none;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    max-width: 420px;
+  }
+  .placeholder h2 {
+    margin: 0.8rem 0 0.5rem;
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    letter-spacing: -0.05em;
+    line-height: 1;
+  }
+  .placeholder p {
+    margin: 0;
+    max-width: 36ch;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    line-height: 1.8;
+  }
+  .placeholder .primary-button { margin-top: 1.4rem; }
+
+  /* ══════════════════════════════════════════════════════════════════
+     COMPOSER
+     ══════════════════════════════════════════════════════════════════ */
+  .composer {
+    padding: 0.85rem clamp(1rem, 4vw, 2.4rem) 1rem;
+    border-top: 1px solid var(--border-subtle);
+    background: rgba(0, 0, 0, 0.18);
+  }
+  .composer-row { display: flex; gap: 0.6rem; align-items: flex-end; }
+  .composer textarea {
+    flex: 1;
+    resize: none;
+    min-height: 46px;
+    max-height: 160px;
+    padding: 0.72rem 0.95rem;
+    background: rgba(0, 0, 0, 0.42);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    outline: none;
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    line-height: 1.45;
+    color: var(--text-primary);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  }
+  .send-button { height: 46px; padding: 0 1.4rem; }
+  .composer-hint {
+    display: block;
+    margin-top: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     MODAL
+     ══════════════════════════════════════════════════════════════════ */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 7, 11, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    z-index: 30;
+    animation: fade-in 200ms var(--ease) both;
+  }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    width: min(480px, 100%);
+    max-height: min(640px, 90vh);
+    display: flex;
+    flex-direction: column;
+    background: rgba(11, 15, 21, 0.82);
+    backdrop-filter: blur(26px);
+    -webkit-backdrop-filter: blur(26px);
+    border: 1px solid var(--border-glass);
+    border-radius: 24px;
+    padding: 1.35rem;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 70px rgba(167, 139, 250, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    animation: modal-in 260ms var(--ease) both;
+  }
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(14px) scale(0.985); }
+    to { opacity: 1; transform: none; }
+  }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; gap: 0.5rem; }
+  .modal-header h2 { font-size: 1.2rem; margin: 0; letter-spacing: -0.04em; }
+  .modal .tabs { margin-bottom: 0.9rem; }
+  .modal-field { margin-bottom: 0.8rem; }
+  .people-list {
+    overflow-y: auto;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .people-list .pad {
+    padding: 0.75rem 0.5rem;
+    line-height: 1.7;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+  }
+  .person {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    transition: background var(--speed) var(--ease), border-color var(--speed) var(--ease);
+  }
+  .person:hover { background: var(--bg-panel-hover); }
+  .person.selected {
+    background: var(--accent-purple-dim);
+    border-color: rgba(167, 139, 250, 0.35);
+  }
+  .person input[type='checkbox'] { accent-color: var(--accent-purple); width: 15px; height: 15px; }
+  .person-action {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-cyan);
+    border: 1px solid var(--accent-cyan-dim);
+    border-radius: var(--radius-full);
+    padding: 2px 10px;
+  }
+  .modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 0.95rem;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     MESSAGE ACTIONS (edit / delete) + edited flag
+     ══════════════════════════════════════════════════════════════════ */
+  .chat-header-actions { margin-left: auto; display: flex; gap: 0.4rem; align-items: center; }
+  .chat-header-text { flex: 1; }
+
+  .message-body .bubble + .bubble, .message-body .bubble-footer { margin-top: 0.15rem; }
+  .bubble-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 18px;
+    padding-left: 0.2rem;
+  }
+  .message-row.mine .bubble-footer { justify-content: flex-end; padding: 0 0.2rem 0 0; }
+
+  .edited-flag {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+
+  .message-actions {
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity var(--speed) var(--ease);
+  }
+  .message-row:hover .message-actions,
+  .message-row:focus-within .message-actions { opacity: 1; }
+  .action-button {
+    border: 1px solid transparent;
+    border-radius: var(--radius-full);
+    padding: 1px 7px;
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: color var(--speed) var(--ease), border-color var(--speed) var(--ease), background var(--speed) var(--ease);
+  }
+  .action-button:hover { color: var(--text-primary); border-color: var(--border-glass); background: var(--bg-panel-hover); }
+  .action-button.danger:hover { color: var(--danger); border-color: rgba(255, 138, 138, 0.4); background: rgba(255, 138, 138, 0.1); }
+  @media (hover: none) { .message-actions { opacity: 1; } }
+
+  .edit-box { display: flex; flex-direction: column; gap: 0.4rem; min-width: min(340px, 60vw); }
+  .edit-input {
+    width: 100%;
+    resize: none;
+    min-height: 46px;
+    padding: 0.55rem 0.8rem;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(167, 139, 250, 0.45);
+    border-radius: var(--radius-md);
+    outline: none;
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-primary);
+    box-shadow: 0 0 0 3px var(--accent-purple-dim);
+  }
+  .edit-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
+  .mini-button {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.3rem 0.75rem;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    border: 1px solid var(--border-glass);
+    background: var(--bg-panel);
+    color: var(--text-secondary);
+    transition: all var(--speed) var(--ease);
+  }
+  .mini-button:hover { color: var(--text-primary); border-color: var(--border-glass-hover); background: var(--bg-panel-hover); }
+  .mini-button.accent { background: var(--accent-purple); border-color: transparent; color: var(--bg-dark); font-weight: 700; }
+  .mini-button.accent:hover { transform: translateY(-1px); box-shadow: 0 0 22px var(--accent-purple-glow); }
+  .mini-button.danger { border-color: rgba(255, 138, 138, 0.35); color: var(--danger); }
+  .mini-button.danger:hover { background: rgba(255, 138, 138, 0.12); border-color: rgba(255, 138, 138, 0.55); }
+  .mini-button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* ══════════════════════════════════════════════════════════════════
+     GROUP DETAILS MODAL
+     ══════════════════════════════════════════════════════════════════ */
+  .modal-scroll {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-right: -0.35rem;
+    padding-right: 0.35rem;
+  }
+  .group-name-row { display: flex; gap: 0.45rem; align-items: center; }
+  .group-name-row input {
+    flex: 1;
+    padding: 0.6rem 0.8rem;
+    background: rgba(0, 0, 0, 0.42);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    outline: none;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    transition: border-color var(--speed) var(--ease), box-shadow var(--speed) var(--ease);
+  }
+  .group-name-row input:focus { border-color: rgba(167, 139, 250, 0.5); box-shadow: 0 0 0 3px var(--accent-purple-dim); }
+  .group-name-row input:disabled { opacity: 0.55; cursor: not-allowed; }
+  .roster-actions .mini-button { padding: 0.22rem 0.6rem; font-size: 0.56rem; }
+
+  .subsection-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1rem 0 0.45rem;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-cyan);
+  }
+  .subsection-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--border-glass), transparent);
+  }
+
+  .roster { display: flex; flex-direction: column; gap: 2px; }
+  .roster-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.42rem 0.55rem;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    font-size: 0.82rem;
+  }
+  .roster-row:hover { background: var(--bg-panel-hover); border-color: var(--border-subtle); }
+  .roster-name { display: flex; align-items: baseline; gap: 0.45rem; min-width: 0; }
+  .roster-name em { font-style: normal; color: var(--text-tertiary); font-size: 0.7rem; }
+  .roster-badge {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent-green);
+    border: 1px solid var(--accent-green-dim);
+    border-radius: var(--radius-full);
+    padding: 1px 7px;
+    white-space: nowrap;
+  }
+  .roster-actions { margin-left: auto; display: flex; gap: 0.3rem; }
+  .group-hint {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    line-height: 1.7;
+    color: var(--text-tertiary);
+    margin: 0.35rem 0 0;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     TOAST
+     ══════════════════════════════════════════════════════════════════ */
+  .toast {
+    position: fixed;
+    bottom: 1.35rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(38, 18, 26, 0.85);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 138, 138, 0.35);
+    color: #ffd9d9;
+    border-radius: var(--radius-full);
+    padding: 0.6rem 1.1rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    max-width: min(480px, 90vw);
+    cursor: pointer;
+    z-index: 40;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    animation: fade-in 200ms var(--ease) both;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     NARROW SCREENS
+     ══════════════════════════════════════════════════════════════════ */
+  @media (max-width: 800px) {
+    .app-shell { grid-template-columns: 1fr; padding: 10px; gap: 0; }
+    .app-shell:not(.chat-open) .chat-pane { display: none; }
+    .app-shell.chat-open .sidebar { display: none; }
+    .sidebar, .chat-pane { border-radius: 20px; }
+    .back-button { display: inline-flex; }
+    .message-row { max-width: 90%; }
+    .auth-card { padding: 1.6rem 1.35rem 1.35rem; border-radius: 22px; }
+    .brand h1 { font-size: 1.4rem; }
+    .composer-hint { display: none; }
+  }
+  @media (max-width: 480px) {
+    .app-shell { padding: 8px; }
+    .avatar.large { width: 50px; height: 50px; border-radius: 15px; }
+    .placeholder h2 { font-size: 1.6rem; }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     FILE ATTACHMENTS
+     ══════════════════════════════════════════════════════════════════ */
+  .hidden-file { display: none; }
+
+  .attach-button {
+    flex: none;
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    font-size: 1.05rem;
+    background: rgba(0, 0, 0, 0.42);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--speed) var(--ease), background var(--speed) var(--ease), transform var(--speed) var(--ease);
+  }
+  .attach-button:hover:not(:disabled) {
+    border-color: var(--accent-cyan-dim);
+    background: var(--accent-cyan-dim);
+    transform: translateY(-1px);
+  }
+  .attach-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .upload-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.55rem;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+  }
+  .upload-track {
+    flex: 1;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .upload-fill {
+    height: 100%;
+    width: 0;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, var(--accent-purple), var(--accent-cyan));
+    transition: width 160ms linear;
+  }
+
+  .bubble.bubble-media {
+    padding: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-width: min(420px, 100%);
+  }
+  .bubble-text { padding: 0.1rem 0.5rem 0.25rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .bubble-media .bubble-text { font-weight: 400; }
+
+  .attachment-card {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.75rem;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    text-decoration: none;
+    color: inherit;
+    min-width: 0;
+    transition: border-color var(--speed) var(--ease), background var(--speed) var(--ease);
+  }
+  .attachment-card:hover { border-color: var(--border-glass-hover); background: rgba(0, 0, 0, 0.38); }
+  .bubble-mine .attachment-card {
+    background: rgba(8, 11, 16, 0.22);
+    border-color: rgba(8, 11, 16, 0.28);
+    color: #0b0e14;
+  }
+  .bubble-mine .attachment-card:hover { background: rgba(8, 11, 16, 0.32); }
+  .attachment-icon {
+    flex: none;
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    font-size: 1.05rem;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-subtle);
+  }
+  .bubble-mine .attachment-icon { background: rgba(8, 11, 16, 0.18); border-color: rgba(8, 11, 16, 0.25); }
+  .attachment-meta { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .attachment-name {
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 22ch;
+  }
+  .attachment-size {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+  .attachment-thumb {
+    display: block;
+    max-width: min(360px, 100%);
+    max-height: 260px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.25);
+    cursor: zoom-in;
+  }
+  .attachment-loading {
+    display: grid;
+    place-items: center;
+    width: 220px;
+    height: 120px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px dashed var(--border-glass);
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    color: var(--text-tertiary);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     DUELS (chess + Flappy Bird)
+     ══════════════════════════════════════════════════════════════════ */
+  .duel-slot { padding: 0 clamp(1rem, 4vw, 2.4rem); }
+  .duel-slot:empty { display: none; }
+
+  .duel-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.7rem;
+    padding: 0.7rem 0.85rem;
+    background: linear-gradient(135deg, var(--accent-purple-dim), rgba(0, 0, 0, 0.3));
+    border: 1px solid rgba(167, 139, 250, 0.35);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 0 30px rgba(167, 139, 250, 0.12);
+    animation: modal-in 260ms var(--ease) both;
+  }
+  .duel-banner.finished { border-color: var(--border-glass); background: rgba(0, 0, 0, 0.3); }
+  .duel-emoji { font-size: 1.4rem; }
+  .duel-text { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .duel-text strong { font-size: 0.86rem; }
+  .duel-text span {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+  }
+  .duel-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+  .game-body { display: flex; flex-direction: column; gap: 0.8rem; align-items: center; }
+  .game-hud {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+  .game-hud .turn { color: var(--accent-cyan); }
+  .game-hud .turn.mine { color: var(--accent-green); }
+  .game-note { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-secondary); text-align: center; line-height: 1.7; }
+  .game-result { font-family: var(--font-display); font-size: 1.15rem; font-weight: 800; letter-spacing: -0.03em; text-align: center; }
+
+  .game-choices { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.8rem 0 0.4rem; }
+  .game-choice {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 0 0.75rem;
+    align-items: center;
+    text-align: left;
+    padding: 0.7rem 0.85rem;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--speed) var(--ease), background var(--speed) var(--ease), transform var(--speed) var(--ease);
+  }
+  .game-choice:hover {
+    border-color: rgba(167, 139, 250, 0.5);
+    background: var(--accent-purple-dim);
+    transform: translateY(-1px);
+  }
+  .game-choice .duel-emoji { grid-row: span 2; }
+  .game-choice strong { font-size: 0.88rem; }
+  .game-choice .muted { font-size: 0.62rem; }
+
+  .chess-board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    width: min(400px, 78vw);
+    aspect-ratio: 1;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1px solid var(--border-glass);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  }
+  .chess-square {
+    position: relative;
+    display: grid;
+    place-items: center;
+    font-size: clamp(1.1rem, 4.2vw, 1.7rem);
+    line-height: 1;
+    padding: 0;
+    user-select: none;
+    transition: background 120ms linear;
+  }
+  .chess-square.light { background: rgba(233, 228, 255, 0.24); }
+  .chess-square.dark  { background: rgba(9, 13, 20, 0.55); }
+  .chess-square.last  { box-shadow: inset 0 0 0 999px rgba(167, 139, 250, 0.22); }
+  .chess-square.pick  { box-shadow: inset 0 0 0 2px var(--accent-purple), inset 0 0 0 999px rgba(167, 139, 250, 0.3); }
+  .chess-square.check { box-shadow: inset 0 0 0 2px #ff8a8a, inset 0 0 0 999px rgba(255, 138, 138, 0.22); }
+  .chess-square.movable { cursor: pointer; }
+  .chess-square .dot {
+    position: absolute;
+    width: 26%;
+    height: 26%;
+    border-radius: 50%;
+    background: var(--accent-cyan);
+    opacity: 0.75;
+    box-shadow: 0 0 12px var(--accent-cyan-glow);
+  }
+  .chess-square .ring {
+    position: absolute;
+    inset: 6%;
+    border: 3px solid var(--accent-cyan);
+    border-radius: 50%;
+    opacity: 0.8;
+  }
+  .piece-w { color: #fbfaff; text-shadow: 0 2px 3px rgba(0, 0, 0, 0.6); }
+  .piece-b { color: #0a0d13; text-shadow: 0 1px 2px rgba(255, 255, 255, 0.28); }
+
+  .promo-row { display: flex; gap: 0.4rem; }
+  .promo-row button {
+    width: 46px;
+    height: 46px;
+    font-size: 1.5rem;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+  .promo-row button:hover { border-color: var(--accent-purple); background: var(--accent-purple-dim); }
+
+  .flappy-canvas {
+    width: min(340px, 74vw);
+    height: auto;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-glass);
+    background: #070a10;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  .score-row { display: flex; gap: 1.4rem; justify-content: center; }
+  .score-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    background: var(--bg-panel);
+    min-width: 92px;
+  }
+  .score-chip b { font-family: var(--font-display); font-size: 1.3rem; letter-spacing: -0.03em; }
+  .score-chip span {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .score-chip.me { border-color: rgba(167, 139, 250, 0.4); }
+
+  /* ══════════════════════════════════════════════════════════════════
+     OWNER (ADMIN) CONSOLE
+     ══════════════════════════════════════════════════════════════════ */
+  .admin-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    background: rgba(6, 9, 14, 0.94);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    animation: fade-in 200ms var(--ease) both;
+  }
+  .admin-top {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.9rem clamp(0.9rem, 3vw, 2rem);
+    border-bottom: 1px solid var(--border-subtle);
+    background: rgba(0, 0, 0, 0.3);
+  }
+  .admin-title {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.05rem;
+    letter-spacing: -0.03em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .admin-tag {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent-green);
+    border: 1px solid var(--accent-green-dim);
+    border-radius: var(--radius-full);
+    padding: 2px 9px;
+  }
+  .admin-tabs { display: flex; gap: 0.3rem; margin-left: auto; flex-wrap: wrap; }
+  .admin-tab {
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 0.42rem 0.85rem;
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--speed) var(--ease);
+  }
+  .admin-tab:hover { color: var(--text-primary); border-color: var(--border-glass-hover); }
+  .admin-tab.active {
+    background: var(--accent-purple-dim);
+    border-color: rgba(167, 139, 250, 0.45);
+    color: var(--accent-purple);
+  }
+  .admin-body { flex: 1; overflow-y: auto; padding: clamp(0.9rem, 3vw, 2rem); }
+  .admin-panel { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 1rem; }
+  .admin-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; }
+  .admin-stat {
+    padding: 0.8rem 0.9rem;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+  }
+  .admin-stat b { display: block; font-family: var(--font-display); font-size: 1.4rem; letter-spacing: -0.04em; line-height: 1.1; }
+  .admin-stat span {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .admin-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-lg);
+    padding: 0.95rem;
+    overflow-x: auto;
+  }
+  .admin-card h3 {
+    margin: 0 0 0.7rem;
+    font-size: 0.9rem;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .admin-search { display: flex; gap: 0.6rem; align-items: center; }
+  .admin-search input {
+    flex: 1;
+    padding: 0.55rem 0.8rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    outline: none;
+  }
+  .admin-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.7rem; }
+  .admin-table th {
+    text-align: left;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+  }
+  .admin-table td {
+    padding: 0.5rem 0.55rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    vertical-align: top;
+    color: var(--text-secondary);
+    max-width: 46ch;
+    overflow-wrap: anywhere;
+  }
+  .admin-table tr:hover td { background: rgba(255, 255, 255, 0.025); }
+  .admin-table td.name { color: var(--text-primary); }
+  .admin-table td.body { font-family: var(--font-body); font-size: 0.76rem; color: rgba(240, 240, 245, 0.86); }
+  .admin-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+  .admin-actions .mini-button { padding: 0.2rem 0.5rem; font-size: 0.54rem; }
+  .admin-empty { padding: 1.2rem 0.4rem; font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-tertiary); }
+  .admin-note {
+    margin: 0 0 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+  }
+  .admin-error { font-family: var(--font-mono); font-size: 0.72rem; color: var(--danger); min-height: 1.2em; }
+  .admin-loading { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-tertiary); padding: 0.6rem 0; }
+  .badge-suspended {
+    font-family: var(--font-mono);
+    font-size: 0.54rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--danger);
+    border: 1px solid rgba(255, 138, 138, 0.35);
+    border-radius: var(--radius-full);
+    padding: 1px 7px;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     REDUCED MOTION
+     ══════════════════════════════════════════════════════════════════ */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+    .cursor-dot { display: none; }
+  }
+</style>
+</head>
+
+<body>
+  <!-- Decorative background: drifting colour orbs + film grain. Purely visual. -->
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+  <div class="noise-overlay" aria-hidden="true"></div>
+  <div class="cursor-dot" aria-hidden="true"></div>
+
+  <div id="root"></div>
+
+  <!-- Supabase from a CDN: no build step, no npm install. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+  <script>
+  (() => {
+    'use strict';
+
+    // ════════════════════════════════════════════════════════════════════
+    //  1. CONFIGURATION
+    //  Your Supabase project. Values are hardcoded so the app never asks.
+    //  The anon key is safe to ship: database rules protect your data.
+    // ════════════════════════════════════════════════════════════════════
+    const SUPABASE_URL = 'https://kpdnoxmnycrtbklvuluu.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwZG5veG1ueWNydGJrbHZ1bHV1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyMTY3NjIsImV4cCI6MjEwODc5Mjc2Mn0.6wukT9y083X1Br89EKmB0iKgAWrhpgHcZJDxuGrYYtY';
+
+    // Supabase Auth identifies accounts by email, so a username gets a hidden
+    // address behind the scenes (alex@chat.app). No email is ever sent.
+    const EMAIL_DOMAIN = 'chat.app';
+    const CONFIG_STORAGE_KEY = 'chat.config';
+
+    // ════════════════════════════════════════════════════════════════════
+    //  2. SMALL HELPERS
+    // ════════════════════════════════════════════════════════════════════
+    const $root = document.getElementById('root');
+
+    /** Tiny hyperscript: h('div', { class: 'x', onclick: fn }, 'text', child) */
+    function h(tag, props, ...children) {
+      const node = document.createElement(tag);
+      if (props) {
+        for (const [key, value] of Object.entries(props)) {
+          if (value === null || value === undefined || value === false) continue;
+          if (key === 'class') node.className = value;
+          else if (key === 'text') node.textContent = value;
+          else if (key === 'value') node.value = value;
+          else if (key === 'checked') node.checked = Boolean(value);
+          else if (key.startsWith('on')) node.addEventListener(key.slice(2).toLowerCase(), value);
+          else node.setAttribute(key, value === true ? '' : value);
+        }
+      }
+      for (const child of children.flat()) {
+        if (child === null || child === undefined || child === false) continue;
+        node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+      }
+      return node;
+    }
+
+    /** localStorage that degrades to memory (some browsers block it on file://). */
+    const storage = (() => {
+      try {
+        const probe = '__chat_probe__';
+        window.localStorage.setItem(probe, '1');
+        window.localStorage.removeItem(probe);
+        return window.localStorage;
+      } catch {
+        const memory = new Map();
+        return {
+          getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+          setItem: (key, value) => memory.set(key, value),
+          removeItem: (key) => memory.delete(key),
+        };
+      }
+    })();
+
+    function loadConfig() {
+      if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+        return { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY };
+      }
+      try {
+        const saved = JSON.parse(storage.getItem(CONFIG_STORAGE_KEY) || 'null');
+        if (saved && saved.url && saved.anonKey) return saved;
+      } catch { /* ignore malformed saved config */ }
+      return null;
+    }
+
+    function saveConfig(url, anonKey) {
+      storage.setItem(CONFIG_STORAGE_KEY, JSON.stringify({ url, anonKey }));
+    }
+
+    const normalizeUsername = (value) => value.trim().toLowerCase();
+    const usernameToEmail = (username) => `${normalizeUsername(username)}@${EMAIL_DOMAIN}`;
+
+    function validateUsername(username) {
+      if (username.length < 3) return 'Usernames need at least 3 characters.';
+      if (username.length > 20) return 'Usernames can be at most 20 characters.';
+      if (!/^[a-z0-9_]+$/.test(username)) return 'Use only lowercase letters, numbers and underscores.';
+      return null;
+    }
+
+    function validatePassword(password) {
+      if (password.length < 6) return 'Passwords need at least 6 characters.';
+      if (password.length > 72) return 'Passwords can be at most 72 characters.';
+      return null;
+    }
+
+    function friendlyError(error, fallback = 'Something went wrong.') {
+      // Supabase returns auth failures as Error instances but database failures as
+      // plain { message, details, hint, code } objects — read both.
+      const raw = error instanceof Error
+        ? error.message
+        : (error && typeof error === 'object' && typeof error.message === 'string')
+          ? error.message
+          : String(error || '');
+      const message = raw.toLowerCase();
+      if (message.includes('already registered') ||
+          message.includes('database error saving new user') ||
+          message.includes('duplicate key')) {
+        return 'That username is already taken.';
+      }
+      if (message.includes('invalid login credentials')) return 'Wrong username or password.';
+      if (message.includes('password should be at least')) return 'Passwords need at least 6 characters.';
+      if (message.includes('rate limit') || message.includes('too many')) {
+        return 'Too many attempts. Wait a minute, then try again.';
+      }
+      if (message.includes('failed to fetch') || message.includes('network')) {
+        return 'Could not reach Supabase. Check your connection and your project URL / anon key.';
+      }
+      return raw || fallback;
+    }
+
+    // ── formatting ──────────────────────────────────────────────────────
+    function conversationTitle(conversation, meId) {
+      if (conversation.kind === 'group') return conversation.name || 'Group chat';
+      const other = conversation.members.find((member) => member.id !== meId);
+      return other ? other.username : 'Direct message';
+    }
+
+    function conversationSubtitle(conversation, meId) {
+      if (conversation.kind === 'dm') return 'Direct message';
+      const names = conversation.members
+        .filter((member) => member.id !== meId)
+        .map((member) => member.username);
+      if (names.length === 0) return 'Just you';
+      if (names.length <= 3) return names.join(', ');
+      return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
+    }
+
+    function initialsFor(conversation, meId) {
+      if (conversation.kind === 'group') return '#';
+      const other = conversation.members.find((member) => member.id !== meId);
+      return (other ? other.username : '?').slice(0, 2).toUpperCase();
+    }
+
+    function formatTime(iso) {
+      if (!iso) return '';
+      const date = new Date(iso);
+      const now = new Date();
+      if (date.toDateString() === now.toDateString()) {
+        return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      }
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    function dayLabel(iso) {
+      const date = new Date(iso);
+      const now = new Date();
+      if (date.toDateString() === now.toDateString()) return 'Today';
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+      return date.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    }
+
+    const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+
+    // ════════════════════════════════════════════════════════════════════
+    //  3. STATE
+    // ════════════════════════════════════════════════════════════════════
+    const state = {
+      sb: null,             // Supabase client
+      session: null,
+      me: null,             // { id, username, suspended }
+      conversations: [],
+      activeId: null,
+      messages: [],
+      channel: null,
+      people: [],
+      duel: null,           // newest duel in the open chat (if any)
+      duelMoves: [],        // its rows: chess moves and flappy scores
+      duelDismissed: new Set(),
+      admin: { key: null, tab: 'overview' },
+    };
+
+    // Persistent nodes, so typing in the composer survives re-renders.
+    const ui = {
+      shell: null,
+      convList: null,
+      chatPane: null,
+      duelSlot: null,      // the strip above the composer where a duel appears
+      dialogRefresh: null, // re-draws the open group dialog when something changes
+    };
+
+    const activeConversation = () =>
+      state.conversations.find((conversation) => conversation.id === state.activeId) || null;
+
+    const isGroupChat = (conversation) => Boolean(conversation && conversation.kind === 'group');
+    const isDmChat = (conversation) => Boolean(conversation && conversation.kind === 'dm');
+
+    const MAX_FILE_BYTES = 25 * 1024 * 1024; // matches the storage bucket limit
+
+    function formatBytes(bytes) {
+      const n = Number(bytes) || 0;
+      if (n < 1024) return `${n} B`;
+      if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+      return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    /**
+     * Private storage files are only readable through a short-lived signed URL.
+     * Cache them so re-rendering a conversation doesn't sign the same file twice.
+     */
+    const signedUrlCache = new Map();
+
+    async function signedUrl(path) {
+      if (!path) return null;
+      const cached = signedUrlCache.get(path);
+      if (cached && cached.expires > Date.now()) return cached.url;
+      const { data, error } = await state.sb.storage
+        .from('chat-files')
+        .createSignedUrl(path, 60 * 30);
+      if (error || !data) return null;
+      signedUrlCache.set(path, { url: data.signedUrl, expires: Date.now() + 25 * 60 * 1000 });
+      return data.signedUrl;
+    }
+
+    const isImageAttachment = (message) =>
+      Boolean(message.attachment_path && /^image\//.test(message.attachment_type || ''));
+
+    function fileIcon(name, type) {
+      const kind = (type || '').toLowerCase();
+      const ext = String(name || '').split('.').pop().toLowerCase();
+      if (kind.startsWith('image/')) return '🖼️';
+      if (kind.startsWith('video/')) return '🎬';
+      if (kind.startsWith('audio/')) return '🎵';
+      if (kind.includes('pdf') || ext === 'pdf') return '📕';
+      if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '🗜️';
+      if (['doc', 'docx', 'txt', 'md', 'rtf'].includes(ext)) return '📄';
+      if (['xls', 'xlsx', 'csv'].includes(ext)) return '📊';
+      if (['ppt', 'pptx'].includes(ext)) return '📽️';
+      if (['js', 'ts', 'html', 'css', 'json', 'py', 'sql'].includes(ext)) return '🧾';
+      return '📎';
+    }
+
+    /** A filename that is safe for a storage path: no slashes, no oddities. */
+    function safeFileName(name) {
+      return String(name || 'file')
+        .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+        .slice(-80);
+    }
+
+    // Only the person who created a group may rename it, add people or kick them.
+    const isCreatorOf = (conversation) =>
+      Boolean(conversation && state.me && conversation.created_by === state.me.id);
+
+    /** Everyone except me — used by both the "new chat" and "add people" pickers. */
+    async function loadPeople(force = false) {
+      if (state.people.length > 0 && !force) return state.people;
+      const { data, error } = await state.sb
+        .from('profiles')
+        .select('id, username')
+        .neq('id', state.me.id)
+        .order('username', { ascending: true })
+        .limit(500);
+      if (error) throw error;
+      state.people = data || [];
+      return state.people;
+    }
+
+    function scrollMessagesToBottom() {
+      const box = document.getElementById('messages');
+      if (box) box.scrollTop = box.scrollHeight;
+    }
+
+    function toast(message) {
+      document.querySelectorAll('.toast').forEach((node) => node.remove());
+      const node = h('div', { class: 'toast', text: message, onclick: () => node.remove() });
+      document.body.append(node);
+      setTimeout(() => node.remove(), 6000);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  4. SETUP SCREEN (no Supabase config yet)
+    // ════════════════════════════════════════════════════════════════════
+    function renderSetup(message) {
+      const urlInput = h('input', { placeholder: 'https://your-project.supabase.co', autocomplete: 'off', spellcheck: 'false' });
+      const keyInput = h('input', { placeholder: 'eyJhbGciOiJIUzI1NiIs…', autocomplete: 'off', spellcheck: 'false' });
+      const errorLine = h('p', { class: 'error', text: message || '' });
+
+      const form = h('form', { class: 'auth-form' },
+        h('label', null, h('span', { text: 'Project URL' }), urlInput),
+        h('label', null, h('span', { text: 'Anon public key' }), keyInput),
+        errorLine,
+        h('button', { class: 'primary-button', type: 'submit', text: 'Save and continue' }),
+      );
+
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const url = urlInput.value.trim().replace(/\/+$/, '');
+        const anonKey = keyInput.value.trim();
+        if (!/^https?:\/\/.+/.test(url)) {
+          errorLine.textContent = 'The project URL should start with https://';
+          return;
+        }
+        if (anonKey.length < 20) {
+          errorLine.textContent = 'That does not look like an anon key. Copy the whole value.';
+          return;
+        }
+        saveConfig(url, anonKey);
+        boot();
+      });
+
+      $root.replaceChildren(
+        h('div', { class: 'auth' },
+          h('div', { class: 'auth-card setup' },
+            h('div', { class: 'brand' },
+              h('div', { class: 'brand-mark', text: '🔌' }),
+              h('div', null,
+                h('h1', { text: 'Connect Supabase' }),
+                h('p', { class: 'muted', text: 'Two values and you are in.' })),
+            ),
+            h('p', { class: 'note' },
+              'This is a single HTML file, so there is no server to hold secrets. ',
+              'Paste your project URL and anon key here — they stay in this browser. ',
+              'The anon key is meant to be public; your data is protected by database rules.'),
+            form,
+            h('p', { class: 'hint' },
+              'New to Supabase? Follow README.md, then come back. ',
+              'To skip this screen, put the same values at the top of this file.'),
+          ),
+        ),
+      );
+      urlInput.focus();
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  5. SIGN IN / CREATE ACCOUNT
+    // ════════════════════════════════════════════════════════════════════
+    let authMode = 'signin';
+
+    function renderAuth(message) {
+      const usernameInput = h('input', {
+        placeholder: 'e.g. alex',
+        autocomplete: 'username',
+        autocapitalize: 'none',
+        autocorrect: 'off',
+        spellcheck: 'false',
+        maxlength: '20',
+      });
+      const passwordInput = h('input', {
+        type: 'password',
+        placeholder: 'At least 6 characters',
+        autocomplete: 'current-password',
+      });
+      const errorLine = h('p', { class: 'error', text: message || '' });
+      const submitButton = h('button', { class: 'primary-button', type: 'submit', text: 'Sign in' });
+      const hintLine = h('p', { class: 'hint', text: 'New here? Choose "Create account" above.' });
+
+      const signInTab = h('button', { class: 'tab active', type: 'button', text: 'Sign in' });
+      const signUpTab = h('button', { class: 'tab', type: 'button', text: 'Create account' });
+
+      function setMode(mode) {
+        authMode = mode;
+        signInTab.classList.toggle('active', mode === 'signin');
+        signUpTab.classList.toggle('active', mode === 'signup');
+        submitButton.textContent = mode === 'signup' ? 'Create account' : 'Sign in';
+        passwordInput.placeholder = mode === 'signup' ? 'At least 6 characters' : 'Your password';
+        passwordInput.autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+        hintLine.textContent = mode === 'signup'
+          ? 'Pick any username — no email address needed.'
+          : 'New here? Choose "Create account" above.';
+        errorLine.textContent = '';
+      }
+
+      signInTab.addEventListener('click', () => setMode('signin'));
+      signUpTab.addEventListener('click', () => setMode('signup'));
+
+      const form = h('form', { class: 'auth-form' },
+        h('label', null, h('span', { text: 'Username' }), usernameInput),
+        h('label', null, h('span', { text: 'Password' }), passwordInput),
+        errorLine,
+        submitButton,
+      );
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        errorLine.textContent = '';
+
+        const username = normalizeUsername(usernameInput.value);
+        const password = passwordInput.value;
+        const problem = validateUsername(username) || validatePassword(password);
+        if (problem) {
+          errorLine.textContent = problem;
+          return;
+        }
+
+        submitButton.disabled = true;
+        submitButton.textContent = 'Just a second…';
+
+        try {
+          if (authMode === 'signup') {
+            const { data, error } = await state.sb.auth.signUp({
+              email: usernameToEmail(username),
+              password,
+              options: { data: { username } },
+            });
+            if (error) throw error;
+            if (!data.session) {
+              if (data.user && data.user.identities && data.user.identities.length === 0) {
+                throw new Error('That username is already taken.');
+              }
+              throw new Error(
+                'Account created, but sign-in is blocked. In Supabase, turn off Authentication → ' +
+                'Sign In / Providers → Email → "Confirm email", then sign in.',
+              );
+            }
+          } else {
+            const { error } = await state.sb.auth.signInWithPassword({
+              email: usernameToEmail(username),
+              password,
+            });
+            if (error) throw error;
+          }
+        } catch (error) {
+          errorLine.textContent = friendlyError(error, 'Could not sign you in.');
+        } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = authMode === 'signup' ? 'Create account' : 'Sign in';
+        }
+      });
+
+      setMode(authMode);
+
+      $root.replaceChildren(
+        h('div', { class: 'auth' },
+          h('div', { class: 'auth-card' },
+            h('div', { class: 'brand' },
+              h('div', { class: 'brand-mark', text: '💬' }),
+              h('div', null,
+                h('h1', { text: 'Chat' }),
+                h('p', { class: 'muted', text: 'Messages with friends, groups and DMs.' })),
+            ),
+            h('div', { class: 'tabs' }, signInTab, signUpTab),
+            form,
+            hintLine,
+          ),
+        ),
+      );
+
+      usernameInput.focus();
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  6. DATA
+    // ════════════════════════════════════════════════════════════════════
+    async function loadProfile() {
+      const userId = state.session.user.id;
+      // '*' rather than a column list: if the newest schema has not been run
+      // yet, asking for `suspended` by name would break sign-in entirely.
+      const { data } = await state.sb
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (data) return data;
+
+      // Safety net: a database trigger normally creates this row at sign-up.
+      const fallbackName =
+        (state.session.user.user_metadata && state.session.user.user_metadata.username) ||
+        (state.session.user.email || 'user@x').split('@')[0];
+
+      const { data: created } = await state.sb
+        .from('profiles')
+        .insert({ id: userId, username: fallbackName })
+        .select('*')
+        .single();
+
+      return created || null;
+    }
+
+    async function loadConversations() {
+      const { data, error } = await state.sb.rpc('list_conversations');
+      if (error) {
+        toast(error.message);
+        return;
+      }
+      state.conversations = data || [];
+      // Keep a valid selection (or pick the most recent thread).
+      if (!activeConversation()) {
+        state.activeId = state.conversations.length ? state.conversations[0].id : null;
+      }
+    }
+
+    async function loadMessages(conversationId) {
+      const { data, error } = await state.sb
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+        .limit(300);
+      if (error) {
+        toast(error.message);
+        return [];
+      }
+      return data || [];
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  7. SIDEBAR
+    // ════════════════════════════════════════════════════════════════════
+    function renderSidebar() {
+      if (!ui.convList) return;
+
+      if (state.conversations.length === 0) {
+        ui.convList.replaceChildren(
+          h('div', { class: 'empty-sidebar' },
+            h('p', { text: 'No chats yet.' }),
+            h('p', { class: 'muted', text: 'Start a direct message or create a group to get things going.' }),
+          ),
+        );
+        return;
+      }
+
+      ui.convList.replaceChildren(
+        ...state.conversations.map((conversation) => {
+          const title = conversationTitle(conversation, state.me.id);
+          const preview = conversation.last_message
+            ? (conversation.last_sender === state.me.id
+                ? `You: ${conversation.last_message}`
+                : conversation.last_message)
+            : conversationSubtitle(conversation, state.me.id);
+
+          return h('button', {
+            class: 'conversation' + (conversation.id === state.activeId ? ' active' : ''),
+            type: 'button',
+            onclick: () => selectConversation(conversation.id),
+          },
+            h('div', { class: 'avatar' + (conversation.kind === 'group' ? ' avatar-group' : ''), text: initialsFor(conversation, state.me.id) }),
+            h('div', { class: 'conversation-text' },
+              h('div', { class: 'conversation-top' },
+                h('span', { class: 'conversation-title', text: title }),
+                h('span', { class: 'conversation-time', text: formatTime(conversation.last_message_at) }),
+              ),
+              h('span', { class: 'conversation-preview', text: preview }),
+            ),
+          );
+        }),
+      );
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  8. CHAT PANE
+    // ════════════════════════════════════════════════════════════════════
+    function usernameOf(userId) {
+      if (state.me && userId === state.me.id) return state.me.username;
+      const conversation = activeConversation();
+      const member = conversation && conversation.members.find((person) => person.id === userId);
+      return member ? member.username : 'unknown';
+    }
+
+    function renderMessages(options = {}) {
+      const box = document.getElementById('messages');
+      if (!box) return;
+      const previousScroll = box.scrollTop;
+      box.replaceChildren();
+
+      const conversation = activeConversation();
+      if (!conversation) return;
+
+      if (state.messages.length === 0) {
+        box.append(
+          h('div', { class: 'empty-chat' },
+            h('div', {
+              class: 'avatar large ' + (conversation.kind === 'group' ? 'avatar-group' : ''),
+              text: conversation.kind === 'group' ? '#' : conversationTitle(conversation, state.me.id).slice(0, 2).toUpperCase(),
+            }),
+            h('h2', { text: conversationTitle(conversation, state.me.id) }),
+            h('p', {
+              class: 'muted',
+              text: conversation.kind === 'group'
+                ? 'This is the start of the group. Say hello to everyone.'
+                : 'No messages yet. Say hi to get started.',
+            }),
+          ),
+        );
+        return;
+      }
+
+      state.messages.forEach((message, index) => {
+        box.append(buildMessageRow(message, index > 0 ? state.messages[index - 1] : null));
+      });
+
+      // Edits and deletions redraw in place; new messages jump to the bottom.
+      if (options.keepScroll) box.scrollTop = previousScroll;
+      else scrollMessagesToBottom();
+    }
+
+    /** The picture, or the little file card, that sits inside a bubble. */
+    function attachmentNode(message) {
+      const path = message.attachment_path;
+      const name = message.attachment_name || 'file';
+
+      if (isImageAttachment(message)) {
+        const frame = h('div', { class: 'attachment-loading', text: 'loading picture…' });
+        const img = h('img', { class: 'attachment-thumb', alt: name });
+        const open = () => {
+          signedUrl(path).then((url) => {
+            if (url) window.open(url, '_blank', 'noopener');
+          });
+        };
+        img.addEventListener('click', open);
+        signedUrl(path).then((url) => {
+          if (!url) {
+            if (frame.isConnected) {
+              frame.textContent = 'picture unavailable';
+              frame.replaceWith(fileCard(message));
+            }
+            return;
+          }
+          img.src = url;
+          if (frame.isConnected) frame.replaceWith(img);
+        });
+        return frame;
+      }
+
+      return fileCard(message);
+    }
+
+    function fileCard(message) {
+      const name = message.attachment_name || 'file';
+      const card = h('a', {
+        class: 'attachment-card',
+        href: '#',
+        title: `Download ${name}`,
+      },
+        h('div', { class: 'attachment-icon', text: fileIcon(name, message.attachment_type) }),
+        h('div', { class: 'attachment-meta' },
+          h('span', { class: 'attachment-name', text: name }),
+          h('span', { class: 'attachment-size', text: formatBytes(message.attachment_size) + ' · download' }),
+        ),
+      );
+      card.addEventListener('click', async (event) => {
+        event.preventDefault();
+        const url = await signedUrl(message.attachment_path);
+        if (!url) {
+          toast('That file is no longer available.');
+          return;
+        }
+        const link = h('a', { href: url, download: name });
+        document.body.append(link);
+        link.click();
+        link.remove();
+      });
+      return card;
+    }
+
+    function buildMessageRow(message, previous) {
+      const conversation = activeConversation();
+      const mine = message.sender_id === state.me.id;
+      const group = isGroupChat(conversation);
+      const startsRun = !previous || previous.sender_id !== message.sender_id;
+      const showAuthor = group && startsRun;
+      // The group creator can delete anybody's message, not just their own.
+      const canDelete = mine || (group && isCreatorOf(conversation));
+
+      const wrapper = h('div');
+      if (!previous || !sameDay(previous.created_at, message.created_at)) {
+        wrapper.append(h('div', { class: 'day-divider', text: dayLabel(message.created_at) }));
+      }
+
+      const row = h('div', {
+        class: 'message-row' + (mine ? ' mine' : '') + (startsRun ? ' run-start' : ''),
+        'data-message-id': message.id,
+      });
+
+      const body = h('div', { class: 'message-body' });
+      if (showAuthor) {
+        body.append(h('span', { class: 'message-author', text: '@' + usernameOf(message.sender_id) }));
+      }
+
+      const bubble = h('div', {
+        class: 'bubble' + (mine ? ' bubble-mine' : '') + (message.attachment_path ? ' bubble-media' : ''),
+        title: formatTime(message.created_at),
+      });
+      if (message.attachment_path) bubble.append(attachmentNode(message));
+      if (message.body && message.body.trim()) {
+        bubble.append(h('div', { class: 'bubble-text', text: message.body }));
+      } else if (!message.attachment_path) {
+        bubble.textContent = message.body || '';
+      }
+
+      const actions = h('div', { class: 'message-actions' });
+      if (mine) {
+        actions.append(h('button', {
+          class: 'action-button', type: 'button', text: 'Edit',
+          onclick: () => startEditing(),
+        }));
+      }
+      if (canDelete) {
+        actions.append(h('button', {
+          class: 'action-button danger', type: 'button', text: 'Delete',
+          onclick: () => removeMessage(),
+        }));
+      }
+
+      const footerRow = h('div', { class: 'bubble-footer' });
+      if (message.edited_at) {
+        footerRow.append(h('span', { class: 'edited-flag', text: 'edited ' + formatTime(message.edited_at) }));
+      }
+      footerRow.append(actions);
+
+      // Only reserve the strip when there is something in it (an "edited" flag or
+      // an action button), so ordinary messages keep their tight spacing.
+      if (footerRow.childElementCount > 0) body.append(bubble, footerRow);
+      else body.append(bubble);
+      row.append(body);
+      wrapper.append(row);
+
+      // ── edit in place ─────────────────────────────────────────────────
+      function startEditing() {
+        if (body.querySelector('.edit-box')) return;
+
+        const input = h('textarea', { class: 'edit-input', rows: '1', maxlength: '4000' });
+        input.value = message.body;
+
+        const saveButton = h('button', { class: 'mini-button accent', type: 'button', text: 'Save' });
+        const cancelButton = h('button', { class: 'mini-button', type: 'button', text: 'Cancel' });
+        const box = h('div', { class: 'edit-box' },
+          input,
+          h('div', { class: 'edit-actions' }, cancelButton, saveButton),
+        );
+
+        const autosize = () => {
+          input.style.height = 'auto';
+          input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+        };
+
+        bubble.replaceWith(box);
+        autosize();
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+
+        function cleanup() {
+          document.removeEventListener('keydown', onEscape, true);
+        }
+
+        function stopEditing() {
+          cleanup();
+          if (box.isConnected) box.replaceWith(bubble);
+        }
+
+        // Escape cancels from anywhere, not just while the textarea has focus.
+        function onEscape(event) {
+          if (event.key !== 'Escape') return;
+          event.stopPropagation();
+          stopEditing();
+        }
+        document.addEventListener('keydown', onEscape, true);
+
+        cancelButton.addEventListener('click', stopEditing);
+        input.addEventListener('input', autosize);
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            saveButton.click();
+          }
+        });
+
+        saveButton.addEventListener('click', async () => {
+          const text = input.value.trim();
+          if (!text && !message.attachment_path) {
+            toast('A message cannot be empty — delete it instead.');
+            return;
+          }
+          if (text === message.body) {
+            stopEditing();
+            return;
+          }
+
+          const original = message.body;
+          saveButton.disabled = true;
+          saveButton.textContent = 'Saving…';
+
+          const { data, error } = await state.sb
+            .from('messages')
+            .update({ body: text })
+            .eq('id', message.id)
+            .select()
+            .single();
+
+          if (error) {
+            saveButton.disabled = false;
+            saveButton.textContent = 'Save';
+            toast(friendlyError(error, 'Could not save that edit.'));
+            return;
+          }
+
+          const stored = state.messages.find((item) => item.id === message.id);
+          if (stored) {
+            stored.body = data.body;
+            stored.edited_at = data.edited_at;
+          }
+
+          // Keep the sidebar preview honest when the edited message is the latest one.
+          state.conversations = state.conversations.map((item) =>
+            item.id === message.conversation_id && item.last_message === original
+              ? { ...item, last_message: data.body }
+              : item,
+          );
+          cleanup();
+          renderSidebar();
+          renderMessages({ keepScroll: true });
+        });
+      }
+
+      // ── delete ────────────────────────────────────────────────────────
+      async function removeMessage() {
+        const question = mine
+          ? 'Delete this message for everyone?'
+          : `Delete this message from @${usernameOf(message.sender_id)}?`;
+        if (!window.confirm(question)) return;
+
+        const { error } = await state.sb.from('messages').delete().eq('id', message.id);
+        if (error) {
+          toast(friendlyError(error, 'Could not delete that message.'));
+          return;
+        }
+
+        const index = state.messages.findIndex((item) => item.id === message.id);
+        if (index > -1) state.messages.splice(index, 1);
+        await loadConversations();
+        renderSidebar();
+        renderMessages({ keepScroll: true });
+      }
+
+      return wrapper;
+    }
+
+    function renderChat() {
+      const pane = ui.chatPane;
+      const conversation = activeConversation();
+      pane.replaceChildren();
+
+      if (!conversation) {
+        if (ui.shell) ui.shell.classList.remove('chat-open');
+        pane.classList.add('placeholder');
+        pane.append(
+          h('div', { class: 'chat-pane placeholder' },
+            h('div', null,
+              h('h2', { text: 'Welcome, @' + state.me.username }),
+              h('p', { class: 'muted', text: 'Pick a chat on the left, or start a new one.' }),
+              h('button', { class: 'primary-button', type: 'button', text: 'New chat', onclick: openNewChatDialog }),
+            ),
+          ),
+        );
+        return;
+      }
+
+      pane.classList.remove('placeholder');
+      if (ui.shell) ui.shell.classList.add('chat-open');
+
+      const textarea = h('textarea', {
+        rows: '1',
+        maxlength: '4000',
+        placeholder: 'Message ' + conversationTitle(conversation, state.me.id),
+      });
+
+      const sendButton = h('button', {
+        class: 'primary-button send-button',
+        type: 'button',
+        text: 'Send',
+        onclick: () => send(textarea.value),
+      });
+
+      const composerError = h('p', { class: 'error', text: '' });
+
+      textarea.addEventListener('input', () => {
+        sendButton.disabled = textarea.value.trim().length === 0;
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
+      });
+
+      textarea.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          send(textarea.value);
+        }
+      });
+
+      // ── file picker + upload progress ─────────────────────────────────
+      const uploadLabel = h('span', { text: '' });
+      const uploadFill = h('div', { class: 'upload-fill' });
+      const uploadBar = h('div', { class: 'upload-bar', style: 'display:none' },
+        uploadLabel,
+        h('div', { class: 'upload-track' }, uploadFill),
+      );
+
+      const fileInput = h('input', { type: 'file', class: 'hidden-file' });
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files && fileInput.files[0];
+        fileInput.value = ''; // so picking the same file twice still fires
+        if (file) uploadFile(file);
+      });
+
+      const attachButton = h('button', {
+        class: 'attach-button',
+        type: 'button',
+        text: '📎',
+        title: 'Send a file (up to 25 MB)',
+        'aria-label': 'Attach a file',
+        onclick: () => fileInput.click(),
+      });
+
+      function newId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+          return window.crypto.randomUUID();
+        }
+        return Math.random().toString(16).slice(2) + Date.now().toString(16);
+      }
+
+      async function insert(conversationId, payload) {
+        const { data, error } = await state.sb
+          .from('messages')
+          .insert({ conversation_id: conversationId, sender_id: state.me.id, ...payload })
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      }
+
+      /** Put a saved message on screen and into the sidebar, without a refetch. */
+      function afterSend(saved, conversationId) {
+        if (conversationId === state.activeId) {
+          if (!state.messages.some((message) => message.id === saved.id)) {
+            const previous = state.messages[state.messages.length - 1] || null;
+            state.messages.push(saved);
+            const box = document.getElementById('messages');
+            if (box) {
+              const emptyState = box.querySelector('.empty-chat');
+              if (emptyState) emptyState.remove();
+              box.append(buildMessageRow(saved, previous));
+              scrollMessagesToBottom();
+            }
+          }
+        }
+
+        const preview = saved.body && saved.body.trim()
+          ? saved.body
+          : saved.attachment_name
+            ? '📎 ' + saved.attachment_name
+            : '';
+
+        state.conversations = state.conversations.map((item) =>
+          item.id === conversationId
+            ? { ...item, last_message: preview, last_message_at: saved.created_at, last_sender: saved.sender_id }
+            : item,
+        );
+        sortConversations();
+        renderSidebar();
+      }
+
+      async function send(body) {
+        const text = body.trim();
+        const conversationId = state.activeId;
+        if (!text || !conversationId) return;
+        sendButton.disabled = true;
+        composerError.textContent = '';
+
+        try {
+          const saved = await insert(conversationId, { body: text });
+          textarea.value = '';
+          textarea.style.height = 'auto';
+          afterSend(saved, conversationId);
+        } catch (error) {
+          composerError.textContent = friendlyError(error, 'Could not send that message.');
+        } finally {
+          sendButton.disabled = false;
+          textarea.focus();
+        }
+      }
+
+      async function uploadFile(file) {
+        const conversationId = state.activeId;
+        if (!conversationId) return;
+        composerError.textContent = '';
+
+        if (file.size > MAX_FILE_BYTES) {
+          composerError.textContent = `That file is ${formatBytes(file.size)} — the limit is 25 MB.`;
+          return;
+        }
+
+        const caption = textarea.value.trim();
+        const path = `${conversationId}/${newId()}-${safeFileName(file.name)}`;
+
+        attachButton.disabled = true;
+        sendButton.disabled = true;
+        uploadBar.style.display = 'flex';
+        uploadLabel.textContent = `Uploading ${file.name}`;
+        uploadFill.style.width = '0%';
+
+        try {
+          const { error: uploadError } = await state.sb.storage
+            .from('chat-files')
+            .upload(path, file, {
+              cacheControl: '3600',
+              upsert: false,
+              contentType: file.type || 'application/octet-stream',
+              onUploadProgress: (event) => {
+                if (event && event.total) {
+                  uploadFill.style.width = `${Math.round((event.loaded / event.total) * 100)}%`;
+                }
+              },
+            });
+          if (uploadError) throw uploadError;
+
+          uploadLabel.textContent = 'Sending…';
+          const saved = await insert(conversationId, {
+            body: caption,
+            attachment_path: path,
+            attachment_name: file.name,
+            attachment_type: file.type || 'application/octet-stream',
+            attachment_size: file.size,
+          });
+
+          textarea.value = '';
+          textarea.style.height = 'auto';
+          afterSend(saved, conversationId);
+        } catch (error) {
+          composerError.textContent = friendlyError(error, 'Could not upload that file.');
+        } finally {
+          attachButton.disabled = false;
+          sendButton.disabled = false;
+          uploadBar.style.display = 'none';
+          uploadFill.style.width = '0%';
+          textarea.focus();
+        }
+      }
+
+      pane.append(
+        h('header', { class: 'chat-header' },
+          h('button', {
+            class: 'ghost-button back-button',
+            type: 'button',
+            text: '←',
+            onclick: () => {
+              state.activeId = null;
+              renderSidebar();
+              renderChat();
+            },
+          }),
+          h('div', { class: 'chat-header-text' },
+            h('strong', { text: conversationTitle(conversation, state.me.id) }),
+            h('span', { class: 'muted', text: conversationSubtitle(conversation, state.me.id) }),
+          ),
+          isGroupChat(conversation)
+            ? h('div', { class: 'chat-header-actions' },
+                h('button', {
+                  class: 'ghost-button', type: 'button',
+                  text: conversation.members.length === 1
+                    ? '1 member'
+                    : `${conversation.members.length} members`,
+                  title: 'Group details',
+                  onclick: openGroupDetails,
+                }),
+              )
+            : h('div', { class: 'chat-header-actions' },
+                h('button', {
+                  class: 'ghost-button', type: 'button', text: '🎮 Duel',
+                  title: 'Challenge to chess or Flappy Bird',
+                  onclick: openDuelPicker,
+                }),
+              ),
+        ),
+        h('div', { class: 'messages', id: 'messages' }),
+        ui.duelSlot = h('div', { class: 'duel-slot', id: 'duel-slot' }),
+        h('div', { class: 'composer' },
+          composerError,
+          uploadBar,
+          h('div', { class: 'composer-row' },
+            fileInput,
+            attachButton,
+            textarea,
+            sendButton,
+          ),
+          h('span', { class: 'composer-hint', text: 'Enter to send · Shift + Enter for a new line · 📎 sends a file' }),
+        ),
+      );
+
+      renderMessages();
+      textarea.focus();
+      loadDuel().then(renderDuel).catch(() => {});
+    }
+
+    async function selectConversation(conversationId) {
+      state.activeId = conversationId;
+      state.messages = [];
+      state.duel = null;
+      state.duelMoves = [];
+      renderSidebar();
+      renderChat();
+      const messages = await loadMessages(conversationId);
+      if (state.activeId !== conversationId) return; // user switched while loading
+      state.messages = messages;
+      renderMessages();
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  8b. GROUP DETAILS — rename, add people, remove people, leave
+    //  Everything except "leave" is creator-only; the database enforces the
+    //  same rule, so a modified frontend cannot get around it.
+    // ════════════════════════════════════════════════════════════════════
+    function openGroupDetails() {
+      const conversationId = state.activeId;
+      if (!isGroupChat(activeConversation())) return;
+
+      const current = () =>
+        state.conversations.find((conversation) => conversation.id === conversationId) || null;
+
+      const scroll = h('div', { class: 'modal-scroll' });
+      const errorLine = h('p', { class: 'error', text: '' });
+      let peopleRequested = false;
+
+      const leaveButton = h('button', {
+        class: 'mini-button danger', type: 'button', text: 'Leave group', onclick: () => leave(),
+      });
+      const closeButton = h('button', {
+        class: 'mini-button', type: 'button', text: 'Close', onclick: () => close(),
+      });
+
+      const backdrop = h('div', { class: 'modal-backdrop' });
+      const modal = h('div', { class: 'modal' },
+        h('header', { class: 'modal-header' },
+          h('h2', { text: 'Group details' }),
+          h('button', {
+            class: 'ghost-button', type: 'button', text: '✕',
+            'aria-label': 'Close', onclick: () => close(),
+          }),
+        ),
+        scroll,
+        errorLine,
+        h('div', { class: 'modal-footer' }, leaveButton, closeButton),
+      );
+
+      backdrop.append(modal);
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop) close();
+      });
+      document.body.append(backdrop);
+      document.addEventListener('keydown', onKey);
+
+      function onKey(event) {
+        if (event.key === 'Escape') close();
+      }
+
+      function close() {
+        backdrop.remove();
+        document.removeEventListener('keydown', onKey);
+        if (ui.dialogRefresh === render) ui.dialogRefresh = null;
+      }
+
+      // Re-read the group and redraw the dialog (after any change).
+      async function refresh() {
+        await loadConversations();
+        renderSidebar();
+        if (!current()) {
+          close();
+          return;
+        }
+        render();
+        if (state.activeId === conversationId) renderChat();
+      }
+
+      // ── actions ───────────────────────────────────────────────────────
+      async function rename(conversation, nameInput, button) {
+        const name = nameInput.value.trim();
+        if (!name || name === conversation.name) return;
+        button.disabled = true;
+        button.textContent = 'Saving…';
+        const { error } = await state.sb.rpc('rename_group', {
+          p_conversation: conversationId,
+          p_name: name,
+        });
+        if (error) {
+          errorLine.textContent = friendlyError(error, 'Could not rename the group.');
+          button.disabled = false;
+          button.textContent = 'Rename';
+          return;
+        }
+        errorLine.textContent = '';
+        await refresh();
+        toast('Group renamed.');
+      }
+
+      async function kick(person) {
+        if (!window.confirm(`Remove @${person.username} from this group?`)) return;
+        const { error } = await state.sb.rpc('remove_group_member', {
+          p_conversation: conversationId,
+          p_user: person.id,
+        });
+        if (error) {
+          errorLine.textContent = friendlyError(error, 'Could not remove that person.');
+          return;
+        }
+        errorLine.textContent = '';
+        await refresh();
+        toast(`@${person.username} was removed from the group.`);
+      }
+
+      async function add(person, button) {
+        button.disabled = true;
+        button.textContent = 'Adding…';
+        const { error } = await state.sb.rpc('add_group_members', {
+          p_conversation: conversationId,
+          p_member_ids: [person.id],
+        });
+        if (error) {
+          errorLine.textContent = friendlyError(error, 'Could not add that person.');
+          button.disabled = false;
+          button.textContent = 'Add';
+          return;
+        }
+        errorLine.textContent = '';
+        await refresh();
+        toast(`@${person.username} joined the group.`);
+      }
+
+      async function leave() {
+        const conversation = current();
+        if (!conversation) return;
+        const question = conversation.created_by === state.me.id
+          ? `Leave "${conversation.name}"? Someone else will become the group creator.`
+          : `Leave "${conversation.name}"? You will stop receiving its messages.`;
+        if (!window.confirm(question)) return;
+
+        const { error } = await state.sb.rpc('leave_group', { p_conversation: conversationId });
+        if (error) {
+          errorLine.textContent = friendlyError(error, 'Could not leave the group.');
+          return;
+        }
+
+        close();
+        state.activeId = null;
+        state.messages = [];
+        await loadConversations();
+        renderSidebar();
+        if (state.conversations.length) await selectConversation(state.conversations[0].id);
+        else renderChat();
+        toast('You left the group.');
+      }
+
+      // ── drawing ───────────────────────────────────────────────────────
+      function render() {
+        const conversation = current();
+        if (!conversation) {
+          close();
+          return;
+        }
+
+        const creator = isCreatorOf(conversation);
+        const nameInput = h('input', {
+          maxlength: '60',
+          value: conversation.name || '',
+          disabled: !creator,
+          'aria-label': 'Group name',
+        });
+        const nameRow = h('div', { class: 'group-name-row' }, nameInput);
+
+        if (creator) {
+          const renameButton = h('button', {
+            class: 'mini-button accent', type: 'button', text: 'Rename', disabled: true,
+          });
+          const sync = () => {
+            const value = nameInput.value.trim();
+            renameButton.disabled = !value || value === conversation.name;
+          };
+          nameInput.addEventListener('input', sync);
+          nameInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              rename(conversation, nameInput, renameButton);
+            }
+          });
+          renameButton.addEventListener('click', () => rename(conversation, nameInput, renameButton));
+          nameRow.append(renameButton);
+        }
+
+        scroll.replaceChildren(
+          h('div', { class: 'subsection-label', text: 'Name' }),
+          nameRow,
+          h('p', {
+            class: 'group-hint',
+            text: creator
+              ? 'You created this group, so you can rename it, add people and remove them.'
+              : !conversation.created_by
+                ? 'The database is missing the latest schema, so no group has an owner yet. Re-run supabase/schema.sql.'
+                : `Only @${usernameIn(conversation, conversation.created_by)} can manage this group.`,
+          }),
+        );
+
+        // Members
+        scroll.append(
+          h('div', { class: 'subsection-label', text: `Members · ${conversation.members.length}` }),
+        );
+        const roster = h('div', { class: 'roster' });
+        for (const person of conversation.members) {
+          const row = h('div', { class: 'roster-row' },
+            h('div', { class: 'avatar avatar-small', text: person.username.slice(0, 2).toUpperCase() }),
+            h('div', { class: 'roster-name' },
+              h('span', { text: '@' + person.username }),
+              person.id === state.me.id ? h('em', { text: 'you' }) : null,
+            ),
+            person.id === conversation.created_by
+              ? h('span', { class: 'roster-badge', text: 'creator' })
+              : null,
+          );
+          if (creator && person.id !== state.me.id) {
+            row.append(
+              h('div', { class: 'roster-actions' },
+                h('button', {
+                  class: 'mini-button danger', type: 'button', text: 'Remove',
+                  onclick: () => kick(person),
+                }),
+              ),
+            );
+          }
+          roster.append(row);
+        }
+        scroll.append(roster);
+
+        // Add people (creator only)
+        if (!creator) return;
+
+        const searchInput = h('input', {
+          placeholder: 'Search usernames', autocomplete: 'off', spellcheck: 'false',
+          'aria-label': 'Search usernames to add',
+        });
+        const results = h('div', { class: 'roster' });
+        scroll.append(
+          h('div', { class: 'subsection-label', text: 'Add people' }),
+          searchInput,
+          results,
+        );
+
+        const inGroup = new Set(conversation.members.map((member) => member.id));
+        const candidates = state.people.filter((person) => !inGroup.has(person.id));
+
+        function drawCandidates() {
+          const query = searchInput.value.trim().toLowerCase();
+          const matches = candidates.filter((person) => !query || person.username.includes(query));
+          results.replaceChildren();
+
+          if (candidates.length === 0) {
+            results.append(h('p', { class: 'muted pad', text: 'Everyone who has signed up is already in this group.' }));
+            return;
+          }
+          if (matches.length === 0) {
+            results.append(h('p', { class: 'muted pad', text: 'No usernames match that search.' }));
+            return;
+          }
+          for (const person of matches) {
+            const addButton = h('button', { class: 'mini-button accent', type: 'button', text: 'Add' });
+            addButton.addEventListener('click', () => add(person, addButton));
+            results.append(
+              h('div', { class: 'roster-row' },
+                h('div', { class: 'avatar avatar-small', text: person.username.slice(0, 2).toUpperCase() }),
+                h('div', { class: 'roster-name' }, h('span', { text: '@' + person.username })),
+                h('div', { class: 'roster-actions' }, addButton),
+              ),
+            );
+          }
+        }
+
+        searchInput.addEventListener('input', drawCandidates);
+        drawCandidates();
+
+        if (!peopleRequested) {
+          peopleRequested = true;
+          loadPeople().then((people) => {
+            if (people.length > 0) render();
+          }).catch((error) => {
+            errorLine.textContent = friendlyError(error, 'Could not load the list of people.');
+          });
+        }
+      }
+
+      ui.dialogRefresh = render;
+      render();
+    }
+
+    /** Username for somebody in this conversation, even if they have left. */
+    function usernameIn(conversation, userId) {
+      const member = conversation.members.find((person) => person.id === userId);
+      return member ? member.username : 'someone';
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  9. NEW CHAT DIALOG (direct message + group)
+    // ════════════════════════════════════════════════════════════════════
+    function openNewChatDialog() {
+      let tab = 'dm';
+      const selected = new Set();
+      let search = '';
+
+      const searchInput = h('input', { placeholder: 'Search usernames', autocomplete: 'off', spellcheck: 'false' });
+      const listBox = h('div', { class: 'people-list' });
+      const errorLine = h('p', { class: 'error', text: '' });
+      const nameInput = h('input', { placeholder: 'e.g. Weekend plans', maxlength: '60' });
+      const nameField = h('label', { class: 'modal-field', style: 'display:none' },
+        h('span', { text: 'Group name' }), nameInput);
+      const searchField = h('label', { class: 'modal-field' }, h('span', { text: 'Find someone' }), searchInput);
+
+      const footerInfo = h('span', { class: 'muted' });
+      const createButton = h('button', {
+        class: 'primary-button', type: 'button', text: 'Create group', disabled: true,
+        onclick: async () => {
+          const name = nameInput.value.trim();
+          if (!name) {
+            errorLine.textContent = 'Give the group a name.';
+            return;
+          }
+          createButton.disabled = true;
+          createButton.textContent = 'Creating…';
+          const { data, error } = await state.sb.rpc('create_group', {
+            p_name: name,
+            p_member_ids: Array.from(selected),
+          });
+          if (error) {
+            errorLine.textContent = error.message;
+            createButton.disabled = false;
+            createButton.textContent = 'Create group';
+            return;
+          }
+          close();
+          await afterCreate(data);
+        },
+      });
+
+      const footer = h('footer', { class: 'modal-footer', style: 'display:none' }, footerInfo, createButton);
+
+      const dmTab = h('button', { class: 'tab active', type: 'button', text: 'Direct message' });
+      const groupTab = h('button', { class: 'tab', type: 'button', text: 'Group chat' });
+
+      const backdrop = h('div', { class: 'modal-backdrop' });
+      const modal = h('div', { class: 'modal' },
+        h('header', { class: 'modal-header' },
+          h('h2', { text: 'New conversation' }),
+          h('button', { class: 'ghost-button', type: 'button', text: '✕', 'aria-label': 'Close', onclick: () => close() }),
+        ),
+        h('div', { class: 'tabs' }, dmTab, groupTab),
+        nameField,
+        searchField,
+        errorLine,
+        listBox,
+        footer,
+      );
+
+      backdrop.append(modal);
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop) close();
+      });
+      document.body.append(backdrop);
+
+      function close() {
+        backdrop.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+
+      function onKey(event) {
+        if (event.key === 'Escape') close();
+      }
+      document.addEventListener('keydown', onKey);
+
+      function setTab(next) {
+        tab = next;
+        dmTab.classList.toggle('active', next === 'dm');
+        groupTab.classList.toggle('active', next === 'group');
+        nameField.style.display = next === 'group' ? 'flex' : 'none';
+        footer.style.display = next === 'group' ? 'flex' : 'none';
+        searchField.querySelector('span').textContent = next === 'dm' ? 'Find someone' : 'Add people';
+        errorLine.textContent = '';
+        renderPeople();
+        (next === 'group' ? nameInput : searchInput).focus();
+      }
+
+      dmTab.addEventListener('click', () => setTab('dm'));
+      groupTab.addEventListener('click', () => setTab('group'));
+      searchInput.addEventListener('input', () => {
+        search = searchInput.value.trim().toLowerCase();
+        renderPeople();
+      });
+      nameInput.addEventListener('input', () => {
+        createButton.disabled = !nameInput.value.trim();
+      });
+
+      function renderPeople() {
+        const filtered = state.people.filter((person) =>
+          !search || person.username.includes(search),
+        );
+        listBox.replaceChildren();
+
+        if (state.people.length === 0) {
+          listBox.append(
+            h('p', { class: 'muted pad', text: 'Nobody else has signed up yet. Create a second account in a private window to test.' }),
+          );
+          return;
+        }
+        if (filtered.length === 0) {
+          listBox.append(h('p', { class: 'muted pad', text: 'No usernames match that search.' }));
+          return;
+        }
+
+        for (const person of filtered) {
+          if (tab === 'dm') {
+            listBox.append(
+              h('button', {
+                class: 'person', type: 'button',
+                onclick: async () => {
+                  const { data, error } = await state.sb.rpc('start_dm', { p_other: person.id });
+                  if (error) {
+                    errorLine.textContent = error.message;
+                    return;
+                  }
+                  close();
+                  await afterCreate(data);
+                },
+              },
+                h('div', { class: 'avatar avatar-small', text: person.username.slice(0, 2).toUpperCase() }),
+                h('span', { text: '@' + person.username }),
+                h('span', { class: 'person-action', text: 'Message' }),
+              ),
+            );
+          } else {
+            const box = h('input', { type: 'checkbox' });
+            box.checked = selected.has(person.id);
+            box.addEventListener('change', () => {
+              if (box.checked) selected.add(person.id);
+              else selected.delete(person.id);
+              updateFooter();
+              renderPeople();
+            });
+            listBox.append(
+              h('label', { class: 'person' + (box.checked ? ' selected' : '') },
+                box,
+                h('div', { class: 'avatar avatar-small', text: person.username.slice(0, 2).toUpperCase() }),
+                h('span', { text: '@' + person.username }),
+              ),
+            );
+          }
+        }
+      }
+
+      function updateFooter() {
+        footerInfo.textContent = selected.size === 0
+          ? 'You can also create a group by yourself.'
+          : `${selected.size} ${selected.size === 1 ? 'person' : 'people'} selected`;
+      }
+
+      async function afterCreate(conversationId) {
+        await loadConversations();
+        renderSidebar();
+        await selectConversation(conversationId);
+      }
+
+      setTab('dm');
+      updateFooter();
+
+      // Load everyone else once (shared cache), then fill the list.
+      loadPeople()
+        .then(() => renderPeople())
+        .catch((error) => {
+          errorLine.textContent = friendlyError(error, 'Could not load the list of people.');
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  9b. DUELS — a chess or Flappy Bird match between the two people in a DM
+    //  Moves are rows in duel_moves, appended through database functions. Both
+    //  browsers replay the same rows, so the board always agrees.
+    // ════════════════════════════════════════════════════════════════════
+
+    let openDuelId = null;   // the duel whose game window is open
+    let refreshOpenGame = null;
+
+    const otherPlayerId = (duel) =>
+      duel.challenger === state.me.id ? duel.opponent : duel.challenger;
+
+    async function loadDuel() {
+      const conversation = activeConversation();
+      state.duel = null;
+      state.duelMoves = [];
+      if (!isDmChat(conversation)) return;
+
+      const { data, error } = await state.sb
+        .from('duels')
+        .select('*')
+        .eq('conversation_id', conversation.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (error || !data || data.length === 0) return;
+
+      const duel = data[0];
+      state.duel = duel;
+
+      if (duel.status === 'active' || duel.status === 'finished') {
+        const { data: rows } = await state.sb
+          .from('duel_moves')
+          .select('*')
+          .eq('duel_id', duel.id)
+          .order('id', { ascending: true });
+        state.duelMoves = rows || [];
+      }
+    }
+
+    /** Re-draw just the strip above the composer. */
+    function renderDuel() {
+      if (!ui.duelSlot) return;
+      ui.duelSlot.replaceChildren();
+
+      const duel = state.duel;
+      const conversation = activeConversation();
+      if (!duel || !conversation || conversation.id !== duel.conversation_id) return;
+      if (state.duelDismissed.has(duel.id)) return;
+
+      const mine = duel.challenger === state.me.id;
+      const otherId = otherPlayerId(duel);
+      const otherName = usernameOf(otherId);
+      const gameName = duel.game === 'chess' ? 'Chess' : 'Flappy Bird';
+
+      let title = '';
+      let note = '';
+      const actions = h('div', { class: 'duel-actions' });
+
+      const button = (text, handler, variant) => {
+        const node = h('button', {
+          class: 'mini-button' + (variant ? ' ' + variant : ''),
+          type: 'button', text,
+        });
+        node.addEventListener('click', handler);
+        return node;
+      };
+
+      const act = async (call, okayMessage) => {
+        try {
+          const { error } = await call();
+          if (error) throw error;
+          if (okayMessage) toast(okayMessage);
+        } catch (error) {
+          toast(friendlyError(error, 'That did not work.'));
+        }
+        await loadDuel();
+        renderDuel();
+        if (refreshOpenGame && openDuelId === duel.id) refreshOpenGame();
+      };
+
+      if (duel.status === 'pending') {
+        if (mine) {
+          title = `You challenged @${otherName} to ${gameName}`;
+          note = 'Waiting for them to accept…';
+          actions.append(button('Cancel', (event) => {
+            event.target.disabled = true;
+            act(() => state.sb.rpc('cancel_duel', { p_duel: duel.id }));
+          }));
+        } else {
+          title = `@${otherName} challenged you to ${gameName}`;
+          note = 'Accept to start playing.';
+          actions.append(
+            button('Accept', (event) => {
+              event.target.disabled = true;
+              act(() => state.sb.rpc('answer_duel', { p_duel: duel.id, p_accept: true }), 'Game on.');
+            }, 'accent'),
+            button('Decline', (event) => {
+              event.target.disabled = true;
+              act(() => state.sb.rpc('answer_duel', { p_duel: duel.id, p_accept: false }));
+            }),
+          );
+        }
+      } else if (duel.status === 'active') {
+        title = `${gameName} with @${otherName}`;
+        if (duel.game === 'chess') {
+          const played = state.duelMoves.filter((row) => row.kind === 'move').length;
+          const turnColour = played % 2 === 0 ? 'w' : 'b';
+          const myColour = mine ? 'w' : 'b';
+          note = turnColour === myColour ? 'Your move.' : `Waiting for @${otherName}.`;
+        } else {
+          const scored = state.duelMoves.filter((row) => row.kind === 'score');
+          const mineScored = scored.some((row) => row.player_id === state.me.id);
+          note = mineScored ? `Score sent — waiting for @${otherName}.` : 'Play your round, then the scores decide it.';
+        }
+        actions.append(button(duel.game === 'chess' ? 'Open board' : 'Play', () => openGame(duel), 'accent'));
+      } else {
+        const winner = duel.winner;
+        const iWon = winner === state.me.id;
+        title = duel.status === 'declined'
+          ? '@' + otherName + ' declined the game'
+          : duel.status === 'cancelled'
+            ? 'Duel cancelled'
+            : winner === null && duel.status === 'finished'
+              ? 'Draw'
+              : iWon
+                ? 'You won'
+                : '@' + otherName + ' won';
+        note = duel.status === 'finished'
+          ? `${gameName}${duel.result ? ' · ' + duel.result : ''}`
+          : gameName;
+        actions.append(button('Dismiss', () => {
+          state.duelDismissed.add(duel.id);
+          renderDuel();
+        }));
+        if (duel.status === 'finished') {
+          actions.append(button('Rematch', () => openDuelPicker(), 'accent'));
+        }
+      }
+
+      ui.duelSlot.append(
+        h('div', { class: 'duel-banner' + (duel.status === 'finished' || duel.status === 'declined' || duel.status === 'cancelled' ? ' finished' : '') },
+          h('span', { class: 'duel-emoji', text: duel.game === 'chess' ? '♞' : '🐤' }),
+          h('div', { class: 'duel-text' },
+            h('strong', { text: title }),
+            h('span', { text: note }),
+          ),
+          actions,
+        ),
+      );
+    }
+
+    function openDuelPicker() {
+      const conversation = activeConversation();
+      if (!isDmChat(conversation)) {
+        toast('Duels only work in one-to-one chats.');
+        return;
+      }
+      const opponent = conversation.members.find((person) => person.id !== state.me.id);
+      if (!opponent) return;
+
+      const errorLine = h('p', { class: 'admin-error' });
+      const backdrop = h('div', { class: 'modal-backdrop' });
+      const modal = h('div', { class: 'modal', style: 'width:min(420px,100%)' },
+        h('header', { class: 'modal-header' },
+          h('h2', { text: 'Challenge @' + opponent.username }),
+          h('button', { class: 'ghost-button', type: 'button', text: '✕', 'aria-label': 'Close', onclick: () => close() }),
+        ),
+        h('p', { class: 'game-note', text: 'Pick a game. They get an invite in this chat.' }),
+        h('div', { class: 'game-choices' },
+          h('button', { class: 'game-choice', type: 'button', onclick: () => start('chess') },
+            h('span', { class: 'duel-emoji', text: '♞' }),
+            h('strong', { text: 'Chess' }),
+            h('span', { class: 'muted', text: 'You play white if you invite.' }),
+          ),
+          h('button', { class: 'game-choice', type: 'button', onclick: () => start('flappy') },
+            h('span', { class: 'duel-emoji', text: '🐤' }),
+            h('strong', { text: 'Flappy Bird' }),
+            h('span', { class: 'muted', text: 'Same pipes for both. Highest score wins.' }),
+          ),
+        ),
+        errorLine,
+      );
+
+      backdrop.append(modal);
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop) close();
+      });
+      document.body.append(backdrop);
+      document.addEventListener('keydown', onKey);
+
+      function close() {
+        backdrop.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+      function onKey(event) {
+        if (event.key === 'Escape') close();
+      }
+
+      async function start(game) {
+        errorLine.textContent = '';
+        const { error } = await state.sb.rpc('create_duel', {
+          p_conversation: conversation.id,
+          p_game: game,
+          p_opponent: opponent.id,
+        });
+        if (error) {
+          errorLine.textContent = friendlyError(error, 'Could not send that challenge.');
+          return;
+        }
+        close();
+        await loadDuel();
+        renderDuel();
+        toast('Challenge sent.');
+      }
+    }
+
+    // ── A small, complete chess engine ─────────────────────────────────
+    // Pure functions on a 64-square array (index 0 = a1). Moves are UCI text:
+    // "e2e4", plus a piece letter for promotion ("e7e8q").
+    const CHESS_FILE = 'abcdefgh';
+    const CHESS_KNIGHT = [[1, 2], [2, 1], [2, -1], [1, -2], [-1, -2], [-2, -1], [-2, 1], [-1, 2]];
+    const CHESS_DIAG = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+    const CHESS_ORTH = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const CHESS_ALL = CHESS_DIAG.concat(CHESS_ORTH);
+
+    const chessFile = (i) => i % 8;
+    const chessRank = (i) => Math.floor(i / 8);
+    const chessOnBoard = (f, r) => f >= 0 && f < 8 && r >= 0 && r < 8;
+    const chessSquareName = (i) => CHESS_FILE[i % 8] + (Math.floor(i / 8) + 1);
+    const chessIndex = (name) =>
+      CHESS_FILE.indexOf(name[0]) + (Number(name[1]) - 1) * 8;
+    const oppositeColour = (colour) => (colour === 'w' ? 'b' : 'w');
+
+    function chessNew() {
+      const board = new Array(64).fill(null);
+      const back = ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'];
+      for (let f = 0; f < 8; f += 1) {
+        board[f] = { t: back[f], c: 'w' };
+        board[8 + f] = { t: 'p', c: 'w' };
+        board[48 + f] = { t: 'p', c: 'b' };
+        board[56 + f] = { t: back[f], c: 'b' };
+      }
+      return { board, turn: 'w', castle: { K: true, Q: true, k: true, q: true }, ep: null };
+    }
+
+    function chessAttacked(st, target, by) {
+      const tf = chessFile(target);
+      const tr = chessRank(target);
+
+      // Pawns attack diagonally forward.
+      const pawnRank = by === 'w' ? tr - 1 : tr + 1;
+      for (const f of [tf - 1, tf + 1]) {
+        if (!chessOnBoard(f, pawnRank)) continue;
+        const piece = st.board[pawnRank * 8 + f];
+        if (piece && piece.c === by && piece.t === 'p') return true;
+      }
+      for (const [df, dr] of CHESS_KNIGHT) {
+        const f = tf + df, r = tr + dr;
+        if (!chessOnBoard(f, r)) continue;
+        const piece = st.board[r * 8 + f];
+        if (piece && piece.c === by && piece.t === 'n') return true;
+      }
+      for (const [df, dr] of CHESS_ALL) {
+        const f = tf + df, r = tr + dr;
+        if (!chessOnBoard(f, r)) continue;
+        const piece = st.board[r * 8 + f];
+        if (piece && piece.c === by && piece.t === 'k') return true;
+      }
+      for (const [df, dr] of CHESS_DIAG) {
+        let f = tf + df, r = tr + dr;
+        while (chessOnBoard(f, r)) {
+          const piece = st.board[r * 8 + f];
+          if (piece) {
+            if (piece.c === by && (piece.t === 'b' || piece.t === 'q')) return true;
+            break;
+          }
+          f += df; r += dr;
+        }
+      }
+      for (const [df, dr] of CHESS_ORTH) {
+        let f = tf + df, r = tr + dr;
+        while (chessOnBoard(f, r)) {
+          const piece = st.board[r * 8 + f];
+          if (piece) {
+            if (piece.c === by && (piece.t === 'r' || piece.t === 'q')) return true;
+            break;
+          }
+          f += df; r += dr;
+        }
+      }
+      return false;
+    }
+
+    function chessKingSquare(st, colour) {
+      for (let i = 0; i < 64; i += 1) {
+        const piece = st.board[i];
+        if (piece && piece.c === colour && piece.t === 'k') return i;
+      }
+      return -1;
+    }
+
+    function chessPseudoMoves(st, from) {
+      const piece = st.board[from];
+      if (!piece) return [];
+      const out = [];
+      const f0 = chessFile(from);
+      const r0 = chessRank(from);
+
+      if (piece.t === 'p') {
+        const dir = piece.c === 'w' ? 1 : -1;
+        const lastRank = piece.c === 'w' ? 7 : 0;
+        const startRank = piece.c === 'w' ? 1 : 6;
+        const one = from + 8 * dir;
+
+        if (chessOnBoard(f0, r0 + dir) && !st.board[one]) {
+          if (chessRank(one) === lastRank) {
+            for (const promo of 'qrbn') out.push({ from, to: one, promo });
+          } else {
+            out.push({ from, to: one });
+            const two = from + 16 * dir;
+            if (r0 === startRank && !st.board[two]) out.push({ from, to: two });
+          }
+        }
+        for (const df of [-1, 1]) {
+          const f = f0 + df, r = r0 + dir;
+          if (!chessOnBoard(f, r)) continue;
+          const to = r * 8 + f;
+          const target = st.board[to];
+          if (target && target.c !== piece.c) {
+            if (r === lastRank) {
+              for (const promo of 'qrbn') out.push({ from, to, promo });
+            } else {
+              out.push({ from, to });
+            }
+          } else if (!target && st.ep === to) {
+            out.push({ from, to });
+          }
+        }
+        return out;
+      }
+
+      if (piece.t === 'n' || piece.t === 'k') {
+        for (const [df, dr] of (piece.t === 'n' ? CHESS_KNIGHT : CHESS_ALL)) {
+          const f = f0 + df, r = r0 + dr;
+          if (!chessOnBoard(f, r)) continue;
+          const to = r * 8 + f;
+          const target = st.board[to];
+          if (!target || target.c !== piece.c) out.push({ from, to });
+        }
+        if (piece.t === 'k') {
+          const home = piece.c === 'w' ? 4 : 60;
+          const enemy = oppositeColour(piece.c);
+          if (from === home && !chessAttacked(st, home, enemy)) {
+            const kingSide = piece.c === 'w' ? st.castle.K : st.castle.k;
+            const queenSide = piece.c === 'w' ? st.castle.Q : st.castle.q;
+            if (kingSide && !st.board[home + 1] && !st.board[home + 2]
+                && !chessAttacked(st, home + 1, enemy)
+                && !chessAttacked(st, home + 2, enemy)) {
+              out.push({ from, to: home + 2 });
+            }
+            if (queenSide && !st.board[home - 1] && !st.board[home - 2] && !st.board[home - 3]
+                && !chessAttacked(st, home - 1, enemy)
+                && !chessAttacked(st, home - 2, enemy)) {
+              out.push({ from, to: home - 2 });
+            }
+          }
+        }
+        return out;
+      }
+
+      const dirs = piece.t === 'b' ? CHESS_DIAG : piece.t === 'r' ? CHESS_ORTH : CHESS_ALL;
+      for (const [df, dr] of dirs) {
+        let f = f0 + df, r = r0 + dr;
+        while (chessOnBoard(f, r)) {
+          const to = r * 8 + f;
+          const target = st.board[to];
+          if (!target) {
+            out.push({ from, to });
+          } else {
+            if (target.c !== piece.c) out.push({ from, to });
+            break;
+          }
+          f += df; r += dr;
+        }
+      }
+      return out;
+    }
+
+    function chessApply(st, move) {
+      const board = st.board.map((piece) => (piece ? { t: piece.t, c: piece.c } : null));
+      const piece = board[move.from];
+      const next = { board, turn: oppositeColour(st.turn), castle: Object.assign({}, st.castle), ep: null };
+
+      const f0 = chessFile(move.from), r0 = chessRank(move.from);
+      const f1 = chessFile(move.to), r1 = chessRank(move.to);
+
+      // En passant: the captured pawn is beside the moving pawn, not on `to`.
+      if (piece.t === 'p' && st.ep === move.to && !board[move.to]) {
+        board[move.to - 8 * (piece.c === 'w' ? 1 : -1)] = null;
+      }
+
+      board[move.to] = move.promo ? { t: move.promo, c: piece.c } : piece;
+      board[move.from] = null;
+
+      // Castling moves the rook too.
+      if (piece.t === 'k' && Math.abs(f1 - f0) === 2) {
+        if (f1 > f0) {
+          board[move.to - 1] = board[move.to + 1];
+          board[move.to + 1] = null;
+        } else {
+          board[move.to + 1] = board[move.to - 2];
+          board[move.to - 2] = null;
+        }
+      }
+
+      if (piece.t === 'p' && Math.abs(r1 - r0) === 2) {
+        next.ep = (move.from + move.to) / 2;
+      }
+
+      if (piece.t === 'k') {
+        if (piece.c === 'w') { next.castle.K = false; next.castle.Q = false; }
+        else { next.castle.k = false; next.castle.q = false; }
+      }
+      // A rook that moves, or is captured on its corner, can no longer castle.
+      for (const [square, right] of [[0, 'Q'], [7, 'K'], [56, 'q'], [63, 'k']]) {
+        if (move.from === square || move.to === square) {
+          next.castle[right] = false;
+        }
+      }
+
+      return next;
+    }
+
+    const chessIsCheck = (st, colour) => {
+      const king = chessKingSquare(st, colour);
+      return king >= 0 && chessAttacked(st, king, oppositeColour(colour));
+    };
+
+    function chessLegalMoves(st) {
+      const out = [];
+      for (let i = 0; i < 64; i += 1) {
+        const piece = st.board[i];
+        if (!piece || piece.c !== st.turn) continue;
+        for (const move of chessPseudoMoves(st, i)) {
+          const next = chessApply(st, move);
+          const king = chessKingSquare(next, st.turn);
+          if (king < 0 || !chessAttacked(next, king, oppositeColour(st.turn))) {
+            out.push(move);
+          }
+        }
+      }
+      return out;
+    }
+
+    function chessFromMoves(moves) {
+      let st = chessNew();
+      for (const text of moves) {
+        const legal = chessLegalMoves(st);
+        const move = legal.find((candidate) =>
+          chessSquareName(candidate.from) + chessSquareName(candidate.to) + (candidate.promo || '') === text,
+        );
+        if (!move) break; // ignore anything that is not a legal move
+        st = chessApply(st, move);
+      }
+      return st;
+    }
+
+    function chessStatus(st) {
+      if (chessLegalMoves(st).length > 0) return 'playing';
+      return chessIsCheck(st, st.turn) ? 'checkmate' : 'stalemate';
+    }
+
+    const CHESS_GLYPH = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+
+    /** A modal with a game body and footer, wired to close cleanly. */
+    function makeGameModal(title, onClose) {
+      const body = h('div', { class: 'game-body' });
+      const footer = h('div', { class: 'modal-footer' });
+      const backdrop = h('div', { class: 'modal-backdrop' });
+      const modal = h('div', { class: 'modal', style: 'width:min(540px,100%);max-height:min(92vh,780px)' },
+        h('header', { class: 'modal-header' },
+          h('h2', { text: title }),
+          h('button', { class: 'ghost-button', type: 'button', text: '✕', 'aria-label': 'Close', onclick: () => close() }),
+        ),
+        body,
+        footer,
+      );
+
+      backdrop.append(modal);
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop) close();
+      });
+      document.body.append(backdrop);
+      document.addEventListener('keydown', onKey);
+
+      function close() {
+        openDuelId = null;
+        refreshOpenGame = null;
+        document.removeEventListener('keydown', onKey);
+        if (typeof onClose === 'function') onClose();
+        backdrop.remove();
+      }
+      function onKey(event) {
+        if (event.key === 'Escape') close();
+      }
+
+      footer.append(h('button', { class: 'mini-button', type: 'button', text: 'Close', onclick: () => close() }));
+      return { body, footer, modal, close };
+    }
+
+    function openGame(duel) {
+      if (duel.game === 'chess') openChess(duel);
+      else openFlappy(duel);
+    }
+
+    /** The live row for this duel (kept fresh by realtime). */
+    const currentDuel = (duel) => (state.duel && state.duel.id === duel.id ? state.duel : duel);
+
+    // ── Chess board ───────────────────────────────────────────────────
+    function openChess(duel) {
+      openDuelId = duel.id;
+      const myColour = duel.challenger === state.me.id ? 'w' : 'b';
+      const otherName = usernameOf(otherPlayerId(duel));
+      let selected = -1;
+
+      const { body, footer, close } = makeGameModal('Chess');
+      const hud = h('div', { class: 'game-hud' });
+      const boardBox = h('div', { class: 'chess-board' });
+      const promoBox = h('div', { class: 'promo-row' });
+      const note = h('p', { class: 'game-note' });
+
+      const resignButton = h('button', { class: 'mini-button danger', type: 'button', text: 'Resign' });
+      resignButton.addEventListener('click', resign);
+      footer.prepend(resignButton);
+      body.append(hud, boardBox, promoBox, note);
+
+      const rowsOfKind = (kind) => state.duelMoves.filter((row) => row.kind === kind);
+      const moveTexts = () => rowsOfKind('move').map((row) => row.payload);
+
+      function draw() {
+        const live = currentDuel(duel);
+        const st = chessFromMoves(moveTexts());
+        const legal = chessLegalMoves(st);
+        const moves = rowsOfKind('move');
+        const lastRow = moves.length ? moves[moves.length - 1] : null;
+        const lastText = lastRow ? lastRow.payload : '';
+        const targets = selected >= 0 ? legal.filter((move) => move.from === selected) : [];
+        const checkSquare = chessIsCheck(st, st.turn) ? chessKingSquare(st, st.turn) : -1;
+        const running = live.status === 'active';
+        const myTurn = running && st.turn === myColour;
+
+        promoBox.replaceChildren();
+
+        // Heading
+        hud.replaceChildren();
+        if (live.status === 'finished') {
+          const iWon = live.winner === state.me.id;
+          hud.append(h('span', { class: 'turn', text: live.winner === null ? 'Draw' : iWon ? 'You won' : '@' + otherName + ' won' }));
+          hud.append(h('span', { text: live.result || '' }));
+        } else if (live.status === 'active') {
+          hud.append(h('span', { text: myColour === 'w' ? 'You are white' : 'You are black' }));
+          hud.append(h('span', {
+            class: 'turn' + (myTurn ? ' mine' : ''),
+            text: myTurn ? 'Your move' : '@' + otherName + ' to move',
+          }));
+        } else {
+          hud.append(h('span', { text: 'Waiting to start' }));
+        }
+
+        // Squares, from your side of the board
+        boardBox.replaceChildren();
+        const ranks = myColour === 'w' ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+        const files = myColour === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
+
+        for (const rank of ranks) {
+          for (const file of files) {
+            const index = rank * 8 + file;
+            const piece = st.board[index];
+            const name = chessSquareName(index);
+            const classes = [
+              'chess-square',
+              (file + rank) % 2 === 1 ? 'light' : 'dark',
+            ];
+            if (lastText && (lastText.slice(0, 2) === name || lastText.slice(2, 4) === name)) classes.push('last');
+            if (index === selected) classes.push('pick');
+            if (index === checkSquare) classes.push('check');
+            if (myTurn && piece && piece.c === myColour) classes.push('movable');
+
+            const square = h('button', {
+              class: classes.join(' '),
+              type: 'button',
+              'aria-label': name,
+            });
+
+            if (targets.some((move) => move.to === index)) {
+              square.append(h('span', { class: piece ? 'ring' : 'dot' }));
+            }
+            if (piece) {
+              square.append(h('span', {
+                class: piece.c === 'w' ? 'piece-w' : 'piece-b',
+                text: CHESS_GLYPH[piece.t],
+              }));
+            }
+
+            // Only the player to move can pick a piece up.
+            if (myTurn) {
+              square.addEventListener('click', () => tap(index, st, legal));
+            }
+            boardBox.append(square);
+          }
+        }
+
+        // Footer note
+        if (live.status === 'finished') {
+          note.textContent = live.result === 'resigned' ? 'The game ended by resignation.' : 'The board is final.';
+        } else if (st.turn === myColour && chessIsCheck(st, myColour)) {
+          note.textContent = 'You are in check — you must move out of it.';
+        } else if (st.turn !== myColour && chessIsCheck(st, st.turn)) {
+          note.textContent = '@' + otherName + ' is in check.';
+        } else {
+          note.textContent = myTurn ? 'Tap a piece, then a highlighted square.' : 'The board updates live.';
+        }
+
+        // Never let the waiting player move.
+        resignButton.disabled = live.status !== 'active';
+        checkForFinish(st, live, lastRow);
+      }
+
+      function tap(index, st, legal) {
+        if (currentDuel(duel).status !== 'active' || st.turn !== myColour) return;
+        if (selected === -1) {
+          const piece = st.board[index];
+          if (piece && piece.c === myColour) {
+            selected = index;
+            draw();
+          }
+          return;
+        }
+        if (selected === index) {
+          selected = -1;
+          draw();
+          return;
+        }
+
+        const options = legal.filter((move) => move.from === selected && move.to === index);
+        if (options.length === 0) {
+          const piece = st.board[index];
+          selected = piece && piece.c === myColour ? index : -1;
+          draw();
+          return;
+        }
+        if (options.length === 1) {
+          play(options[0]);
+          return;
+        }
+
+        // Promotion: let the player choose the piece.
+        promoBox.replaceChildren();
+        for (const choice of options) {
+          promoBox.append(h('button', {
+            type: 'button',
+            text: CHESS_GLYPH[choice.promo],
+            title: choice.promo,
+            onclick: () => {
+              promoBox.replaceChildren();
+              play(choice);
+            },
+          }));
+        }
+      }
+
+      async function play(move) {
+        const uci = chessSquareName(move.from) + chessSquareName(move.to) + (move.promo || '');
+        // Show the move immediately; the database row follows.
+        state.duelMoves = state.duelMoves.concat([{
+          id: 'local-' + Date.now(), kind: 'move', payload: uci, player_id: state.me.id,
+        }]);
+        selected = -1;
+        draw();
+
+        const { error } = await state.sb.rpc('chess_move', { p_duel: duel.id, p_move: uci });
+        if (error) {
+          toast(friendlyError(error, 'That move was refused.'));
+        }
+        await loadDuel();
+        renderDuel();
+        draw();
+      }
+
+      async function checkForFinish(st, live, lastRow) {
+        if (live.status !== 'active') return;
+        if (!lastRow || lastRow.player_id !== state.me.id) return;
+        const outcome = chessStatus(st);
+        if (outcome === 'playing') return;
+        const winner = outcome === 'checkmate'
+          ? (st.turn === 'w' ? live.opponent : live.challenger)
+          : null;
+        const { error } = await state.sb.rpc('chess_finish', {
+          p_duel: live.id, p_winner: winner, p_result: outcome,
+        });
+        if (error) return;
+        await loadDuel();
+        renderDuel();
+        draw();
+      }
+
+      async function resign() {
+        if (!window.confirm('Resign this game? The other player wins.')) return;
+        const { error } = await state.sb.rpc('resign_duel', { p_duel: duel.id });
+        if (error) toast(friendlyError(error, 'Could not resign.'));
+        await loadDuel();
+        renderDuel();
+        draw();
+      }
+
+      refreshOpenGame = draw;
+      draw();
+    }
+
+    // ── Flappy Bird ───────────────────────────────────────────────────
+    /** Deterministic RNG, so both players get the identical pipe layout. */
+    function mulberry32(seed) {
+      let a = seed >>> 0;
+      return function random() {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function openFlappy(duel) {
+      openDuelId = duel.id;
+      const otherName = usernameOf(otherPlayerId(duel));
+
+      const canvas = h('canvas', { class: 'flappy-canvas', width: '320', height: '420' });
+      const ctx = canvas.getContext('2d');
+      const hud = h('div', { class: 'game-hud' });
+      const chips = h('div', { class: 'score-row' });
+      const note = h('p', { class: 'game-note' });
+
+      const { body, footer, close } = makeGameModal('Flappy Bird', stop);
+      body.append(hud, canvas, chips, note);
+
+      const forfeit = h('button', { class: 'mini-button danger', type: 'button', text: 'Forfeit' });
+      forfeit.addEventListener('click', async () => {
+        if (!window.confirm('Forfeit this round? The other player wins.')) return;
+        const { error } = await state.sb.rpc('resign_duel', { p_duel: duel.id });
+        if (error) toast(friendlyError(error, 'Could not forfeit.'));
+        await loadDuel();
+        renderDuel();
+        sync();
+      });
+      footer.prepend(forfeit);
+
+      const W = 320;
+      const H = 420;
+      const GRAVITY = 0.34;
+      const FLAP = -5.9;
+      const SPEED = 2.3;
+      const GAP = 138;
+      const PIPE_W = 54;
+      const SPACING = 205;
+      const BIRD_X = 74;
+      const BIRD_R = 13;
+
+      let bird = { y: H / 2, vy: 0 };
+      let pipes = [];
+      let score = 0;
+      let alive = false;
+      let running = false;
+      let submitted = false;
+      let random = null;
+      let raf = 0;
+      let lastTime = 0;
+
+      const scoreOf = (playerId) => {
+        const row = state.duelMoves.find((item) => item.kind === 'score' && item.player_id === playerId);
+        return row ? Number(row.payload) : null;
+      };
+      const mine = () => scoreOf(state.me.id);
+      const theirs = () => scoreOf(otherPlayerId(duel));
+
+      function spawn() {
+        const lastPipe = pipes[pipes.length - 1];
+        pipes.push({
+          x: lastPipe ? lastPipe.x + SPACING : W + 40,
+          gapY: 70 + random() * (H - 250),
+          counted: false,
+        });
+      }
+
+      function begin() {
+        random = mulberry32(duel.seed);
+        bird = { y: H / 2, vy: 0 };
+        pipes = [];
+        score = 0;
+        alive = true;
+        running = true;
+        lastTime = 0;
+        spawn();
+        drawFrame();
+        sync();
+        raf = requestAnimationFrame(tick);
+      }
+
+      function step() {
+        bird.vy += GRAVITY;
+        bird.y += bird.vy;
+
+        for (const pipe of pipes) pipe.x -= SPEED;
+        if (!pipes.length || pipes[pipes.length - 1].x < W - SPACING) spawn();
+        while (pipes.length && pipes[0].x + PIPE_W < -20) pipes.shift();
+
+        for (const pipe of pipes) {
+          if (!pipe.counted && pipe.x + PIPE_W < BIRD_X - BIRD_R) {
+            pipe.counted = true;
+            score += 1;
+          }
+          const overlaps = BIRD_X + BIRD_R > pipe.x && BIRD_X - BIRD_R < pipe.x + PIPE_W;
+          if (overlaps) {
+            if (bird.y - BIRD_R < pipe.gapY || bird.y + BIRD_R > pipe.gapY + GAP) {
+              die();
+              return;
+            }
+          }
+        }
+        if (bird.y + BIRD_R > H || bird.y - BIRD_R < 0) die();
+      }
+
+      function die() {
+        if (!alive) return;
+        alive = false;
+        running = false;
+        drawFrame();
+        submit();
+      }
+
+      async function submit() {
+        if (submitted) return;
+        submitted = true;
+        const { error } = await state.sb.rpc('flappy_score', { p_duel: duel.id, p_score: score });
+        if (error) toast(friendlyError(error, 'Could not send your score.'));
+        await loadDuel();
+        renderDuel();
+        sync();
+      }
+
+      function flap() {
+        if (alive) bird.vy = FLAP;
+      }
+
+      function tick(time) {
+        if (!running) return;
+        if (!lastTime) lastTime = time;
+        const delta = Math.min((time - lastTime) / (1000 / 60), 4);
+        lastTime = time;
+        let steps = Math.max(1, Math.floor(delta));
+        while (steps > 0 && alive) {
+          step();
+          steps -= 1;
+        }
+        drawFrame();
+        if (alive) raf = requestAnimationFrame(tick);
+      }
+
+      function drawFrame() {
+        ctx.clearRect(0, 0, W, H);
+        const sky = ctx.createLinearGradient(0, 0, 0, H);
+        sky.addColorStop(0, '#0a1120');
+        sky.addColorStop(1, '#141c2e');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.10)';
+        for (let i = 0; i < 46; i += 1) {
+          ctx.fillRect((i * 73) % W, (i * 151) % H, 1.5, 1.5);
+        }
+
+        for (const pipe of pipes) {
+          const paint = ctx.createLinearGradient(pipe.x, 0, pipe.x + PIPE_W, 0);
+          paint.addColorStop(0, '#b6a4ff');
+          paint.addColorStop(1, '#7a67dd');
+          ctx.fillStyle = paint;
+          ctx.fillRect(pipe.x, 0, PIPE_W, pipe.gapY);
+          ctx.fillRect(pipe.x, pipe.gapY + GAP, PIPE_W, H - pipe.gapY - GAP);
+          ctx.fillStyle = 'rgba(10,13,20,0.35)';
+          ctx.fillRect(pipe.x + PIPE_W - 8, 0, 8, pipe.gapY);
+          ctx.fillRect(pipe.x + PIPE_W - 8, pipe.gapY + GAP, 8, H - pipe.gapY - GAP);
+        }
+
+        ctx.fillStyle = '#f6e27a';
+        ctx.beginPath();
+        ctx.arc(BIRD_X, bird.y, BIRD_R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#0b0e14';
+        ctx.beginPath();
+        ctx.arc(BIRD_X + 5, bird.y - 4, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ff9f43';
+        ctx.beginPath();
+        ctx.moveTo(BIRD_X + BIRD_R - 2, bird.y);
+        ctx.lineTo(BIRD_X + BIRD_R + 9, bird.y + 4);
+        ctx.lineTo(BIRD_X + BIRD_R - 2, bird.y + 8);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(240,240,245,0.9)';
+        ctx.font = '700 30px Syne, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(score), W / 2, 52);
+
+        if (!alive) {
+          ctx.fillStyle = 'rgba(6,9,14,0.65)';
+          ctx.fillRect(0, 0, W, H);
+          ctx.fillStyle = '#f0f0f5';
+          ctx.font = '700 22px Syne, sans-serif';
+          ctx.fillText('Game over', W / 2, H / 2 - 12);
+          ctx.font = '400 13px "JetBrains Mono", monospace';
+          ctx.fillStyle = 'rgba(240,240,245,0.7)';
+          ctx.fillText(`score ${score}`, W / 2, H / 2 + 16);
+        }
+      }
+
+      function sync() {
+        const live = currentDuel(duel);
+        const myScore = mine();
+        const theirScore = theirs();
+
+        hud.replaceChildren(
+          h('span', { text: live.status === 'finished' ? 'Round over' : 'Same pipes for both' }),
+          h('span', {
+            class: 'turn',
+            text: live.status === 'finished'
+              ? (live.winner === null ? 'Draw' : live.winner === state.me.id ? 'You won' : '@' + otherName + ' won')
+              : myScore === null ? 'Tap or press space' : 'Waiting…',
+          }),
+        );
+
+        chips.replaceChildren(
+          h('div', { class: 'score-chip me' },
+            h('b', { text: myScore === null ? String(score) : String(myScore) }),
+            h('span', { text: 'you' }),
+          ),
+          h('div', { class: 'score-chip' },
+            h('b', { text: theirScore === null ? '—' : String(theirScore) }),
+            h('span', { text: otherName }),
+          ),
+        );
+
+        if (live.status === 'finished') {
+          note.textContent = live.result === 'draw'
+            ? 'Dead heat — nobody wins.'
+            : live.winner === state.me.id
+              ? 'You won this one.'
+              : '@' + otherName + ' won this one.';
+        } else if (myScore !== null && theirScore === null) {
+          note.textContent = `Score sent. Waiting for @${otherName} to play.`;
+        } else if (myScore !== null && theirScore !== null) {
+          note.textContent = 'Both scores are in.';
+        } else {
+          note.textContent = 'Click the canvas or press space to flap. One run each — the higher score wins.';
+        }
+
+        if (live.status === 'active' && myScore === null && !running && !submitted) {
+          begin();
+        }
+      }
+
+      function onKeyDown(event) {
+        if (event.key === ' ' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          flap();
+        }
+      }
+      function onPointerDown(event) {
+        event.preventDefault();
+        flap();
+      }
+
+      canvas.addEventListener('pointerdown', onPointerDown);
+      document.addEventListener('keydown', onKeyDown);
+
+      function stop() {
+        running = false;
+        if (raf) cancelAnimationFrame(raf);
+        canvas.removeEventListener('pointerdown', onPointerDown);
+        document.removeEventListener('keydown', onKeyDown);
+      }
+
+      refreshOpenGame = sync;
+      drawFrame();
+      sync();
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  10. APP SHELL + REALTIME
+    // ════════════════════════════════════════════════════════════════════
+    function sortConversations() {
+      state.conversations.sort((a, b) =>
+        new Date(b.last_message_at || b.created_at).getTime() -
+        new Date(a.last_message_at || a.created_at).getTime(),
+      );
+    }
+
+    function buildShell() {
+      ui.convList = h('div', { class: 'conversation-list' });
+      ui.chatPane = h('section', { class: 'chat-pane' });
+
+      const sidebar = h('aside', { class: 'sidebar' },
+        h('header', { class: 'sidebar-header' },
+          h('div', { class: 'me' },
+            h('div', { class: 'avatar avatar-me', text: state.me.username.slice(0, 2).toUpperCase() }),
+            h('div', { class: 'me-text' },
+              h('strong', { text: '@' + state.me.username }),
+              h('span', { class: 'muted', text: 'Signed in' }),
+            ),
+          ),
+          h('button', {
+            class: 'ghost-button', type: 'button', text: 'Sign out',
+            onclick: () => state.sb.auth.signOut(),
+          }),
+        ),
+        h('div', { class: 'sidebar-actions' },
+          h('button', {
+            class: 'primary-button small', type: 'button',
+            onclick: openNewChatDialog,
+          }, h('span', { class: 'plus', text: '+' }), 'New chat'),
+        ),
+        ui.convList,
+      );
+
+      ui.shell = h('div', { class: 'app-shell' }, sidebar, ui.chatPane);
+      $root.replaceChildren(ui.shell);
+    }
+
+    function subscribeRealtime() {
+      if (state.channel) {
+        state.sb.removeChannel(state.channel);
+        state.channel = null;
+      }
+
+      const channel = state.sb
+        .channel('chat-stream')
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'messages' },
+          (payload) => {
+            const message = payload.new;
+
+            if (!state.conversations.some((conversation) => conversation.id === message.conversation_id)) {
+              loadConversations().then(renderSidebar);
+              return;
+            }
+
+            if (message.conversation_id === state.activeId &&
+                !state.messages.some((item) => item.id === message.id)) {
+              const previous = state.messages[state.messages.length - 1] || null;
+              state.messages.push(message);
+              const box = document.getElementById('messages');
+              if (box) {
+                const emptyState = box.querySelector('.empty-chat');
+                if (emptyState) emptyState.remove();
+                box.append(buildMessageRow(message, previous));
+                scrollMessagesToBottom();
+              }
+            }
+
+            state.conversations = state.conversations.map((conversation) =>
+              conversation.id === message.conversation_id
+                ? { ...conversation, last_message: message.body, last_message_at: message.created_at, last_sender: message.sender_id }
+                : conversation,
+            );
+            sortConversations();
+            renderSidebar();
+          })
+
+        // Somebody edited a message.
+        .on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'messages' },
+          async (payload) => {
+            const updated = payload.new;
+            if (!updated) return;
+            if (!state.conversations.some((conversation) => conversation.id === updated.conversation_id)) return;
+
+            const stored = state.messages.find((item) => item.id === updated.id);
+            if (stored && updated.conversation_id === state.activeId) {
+              stored.body = updated.body;
+              stored.edited_at = updated.edited_at;
+              renderMessages({ keepScroll: true });
+            }
+            await loadConversations();
+            renderSidebar();
+          })
+
+        // Somebody deleted a message.
+        .on('postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'messages' },
+          async (payload) => {
+            const gone = payload.old;
+            if (!gone || !gone.id) return;
+            if (gone.conversation_id &&
+                !state.conversations.some((conversation) => conversation.id === gone.conversation_id)) return;
+
+            const index = state.messages.findIndex((item) => item.id === gone.id);
+            if (index > -1) {
+              state.messages.splice(index, 1);
+              renderMessages({ keepScroll: true });
+            }
+            await loadConversations();
+            renderSidebar();
+            if (ui.dialogRefresh) ui.dialogRefresh();
+          })
+
+        // Membership changes: somebody added me, or somebody else to my group,
+        // or I was removed.
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'conversation_members' },
+          async () => {
+            // Remember what was open before the reload: loadConversations() will
+            // silently select a different chat if this one is gone, so comparing
+            // afterwards would always look fine.
+            const wasOpen = state.activeId;
+            await loadConversations();
+
+            if (wasOpen && !state.conversations.some((item) => item.id === wasOpen)) {
+              // Kicked (or the group was deleted): drop the stale pane at once.
+              state.messages = [];
+              if (state.activeId) await selectConversation(state.activeId);
+              else renderChat();
+              toast('You are no longer in that chat.');
+            } else {
+              renderSidebar();
+            }
+
+            if (ui.dialogRefresh) ui.dialogRefresh();
+          })
+
+        // A group was renamed, or its creator changed.
+        .on('postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'conversations' },
+          async (payload) => {
+            await loadConversations();
+            renderSidebar();
+            if (payload.new && payload.new.id === state.activeId) renderChat();
+            if (ui.dialogRefresh) ui.dialogRefresh();
+          })
+
+        // A duel was created, accepted, resigned or finished.
+        .on('postgres_changes',
+          { event: '*', schema: 'public', table: 'duels' },
+          async (payload) => {
+            const row = payload.new || payload.old;
+            if (!row || row.conversation_id !== state.activeId) return;
+            await loadDuel();
+            renderDuel();
+            if (refreshOpenGame && openDuelId === row.id) refreshOpenGame();
+          })
+
+        // A chess move or a Flappy Bird score arrived.
+        .on('postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'duel_moves' },
+          async (payload) => {
+            const row = payload.new;
+            if (!row || !state.duel || row.duel_id !== state.duel.id) return;
+            await loadDuel();
+            renderDuel();
+            if (refreshOpenGame && openDuelId === row.duel_id) refreshOpenGame();
+          })
+
+        .subscribe();
+
+      state.channel = channel;
+    }
+
+    async function enterApp() {
+      state.me = await loadProfile();
+      if (!state.me) {
+        renderAuth('Your account exists but has no profile row. Run supabase/schema.sql again.');
+        return;
+      }
+      if (state.me.suspended) {
+        renderSuspended();
+        return;
+      }
+
+      await loadConversations();
+      buildShell();
+      renderSidebar();
+      renderChat();
+      if (state.activeId) await selectConversation(state.activeId);
+      subscribeRealtime();
+    }
+
+    function leaveApp() {
+      if (state.channel && state.sb) {
+        state.sb.removeChannel(state.channel);
+        state.channel = null;
+      }
+      state.session = null;
+      state.me = null;
+      state.conversations = [];
+      state.messages = [];
+      state.activeId = null;
+      state.people = [];
+      authMode = 'signin';
+      ui.shell = null;
+      ui.convList = null;
+      ui.chatPane = null;
+      ui.dialogRefresh = null;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  10c. OWNER CONSOLE
+    //  Opened by typing the secret knock anywhere. The password itself is never
+    //  in this file: the database holds a hash and checks what you type.
+    // ════════════════════════════════════════════════════════════════════
+
+    const ADMIN_KNOCK = '1233211233216767';
+
+    const adminDate = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
+
+    function schemaHint(error) {
+      const text = String((error && error.message) || '');
+      if (/could not find the function|schema cache|does not exist/i.test(text)) {
+        return 'The database is missing the newest schema. Paste supabase/schema.sql into the Supabase SQL editor and run it.';
+      }
+      return friendlyError(error, 'That did not work.');
+    }
+
+    async function adminCall(name, args) {
+      const { data, error } = await state.sb.rpc(
+        name,
+        Object.assign({ p_key: state.admin.key }, args || {}),
+      );
+      if (error) throw error;
+      return data;
+    }
+
+    function renderSuspended() {
+      $root.replaceChildren(
+        h('div', { class: 'auth' },
+          h('div', { class: 'auth-card' },
+            h('div', { class: 'brand' },
+              h('div', { class: 'brand-mark', text: '⛔' }),
+              h('div', null,
+                h('h1', { text: 'Account suspended' }),
+                h('p', { class: 'muted', text: 'An owner has paused this account.' })),
+            ),
+            h('p', { class: 'note' },
+              'You can still sign in, but you cannot send messages or start new chats until ',
+              'the account is restored. If you think this is a mistake, contact whoever runs this chat.'),
+            h('button', {
+              class: 'primary-button', type: 'button', text: 'Sign out',
+              onclick: () => state.sb.auth.signOut(),
+            }),
+          ),
+        ),
+      );
+    }
+
+    function openAdminGate() {
+      if (!state.session) {
+        toast('Sign in first, then type the code again.');
+        return;
+      }
+      if (document.querySelector('.admin-screen')) return; // already open
+      if (state.admin.key) {
+        openAdminPanel();
+        return;
+      }
+
+      const input = h('input', { type: 'password', placeholder: 'Owner password', autocomplete: 'current-password' });
+      const line = h('p', { class: 'admin-error' });
+      const unlock = h('button', { class: 'mini-button accent', type: 'submit', text: 'Unlock' });
+
+      const form = h('form', { style: 'display:flex;flex-direction:column;gap:0.6rem' },
+        h('label', { class: 'modal-field' }, h('span', { text: 'Password' }), input),
+        line,
+        h('div', { class: 'modal-footer' },
+          h('button', { class: 'mini-button', type: 'button', text: 'Cancel', onclick: () => close() }),
+          unlock,
+        ),
+      );
+
+      const backdrop = h('div', { class: 'modal-backdrop' });
+      const modal = h('div', { class: 'modal', style: 'width:min(400px,100%)' },
+        h('header', { class: 'modal-header' },
+          h('h2', { text: 'Owner console' }),
+          h('button', { class: 'ghost-button', type: 'button', text: '✕', 'aria-label': 'Close', onclick: () => close() }),
+        ),
+        h('p', { class: 'game-note', text: 'Only the owner password opens this. Every change is written to the database.' }),
+        form,
+      );
+
+      backdrop.append(modal);
+      backdrop.addEventListener('click', (event) => {
+        if (event.target === backdrop) close();
+      });
+      document.body.append(backdrop);
+      document.addEventListener('keydown', onKey);
+      input.focus();
+
+      function close() {
+        backdrop.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+      function onKey(event) {
+        if (event.key === 'Escape') close();
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        line.textContent = '';
+        unlock.disabled = true;
+        unlock.textContent = 'Checking…';
+        try {
+          const { data, error } = await state.sb.rpc('admin_login', { p_key: input.value });
+          if (error) throw error;
+          if (!data) {
+            line.textContent = 'Wrong password.';
+            input.select();
+            return;
+          }
+          state.admin.key = input.value;
+          close();
+          openAdminPanel();
+        } catch (error) {
+          line.textContent = schemaHint(error);
+        } finally {
+          unlock.disabled = false;
+          unlock.textContent = 'Unlock';
+        }
+      });
+    }
+
+    function openAdminPanel() {
+      const body = h('div', { class: 'admin-body' });
+      const tabRow = h('div', { class: 'admin-tabs' });
+      const tabNodes = {};
+      let current = 'overview';
+
+      for (const [id, label] of [['overview', 'Overview'], ['people', 'People'], ['chats', 'Chats'], ['messages', 'Messages']]) {
+        const node = h('button', { class: 'admin-tab', type: 'button', text: label });
+        node.addEventListener('click', () => show(id));
+        tabNodes[id] = node;
+        tabRow.append(node);
+      }
+
+      const screen = h('div', { class: 'admin-screen' },
+        h('header', { class: 'admin-top' },
+          h('div', { class: 'admin-title' },
+            h('span', { text: 'Owner console' }),
+            h('span', { class: 'admin-tag', text: '@' + ((state.me && state.me.username) || 'owner') }),
+          ),
+          tabRow,
+          h('button', { class: 'ghost-button', type: 'button', text: 'Back to chat', onclick: () => close() }),
+        ),
+        body,
+      );
+
+      document.body.append(screen);
+      document.addEventListener('keydown', onKey);
+
+      function close() {
+        screen.remove();
+        document.removeEventListener('keydown', onKey);
+        // The console can change anything: re-read the chat behind it.
+        loadConversations()
+          .then(() => {
+            renderSidebar();
+            if (state.activeId) return selectConversation(state.activeId);
+            renderChat();
+            return null;
+          })
+          .catch(() => {});
+      }
+      function onKey(event) {
+        if (event.key === 'Escape') close();
+      }
+
+      const panel = (...nodes) => body.replaceChildren(h('div', { class: 'admin-panel' }, ...nodes));
+      const statCard = (label, value) =>
+        h('div', { class: 'admin-stat' }, h('b', { text: String(value) }), h('span', { text: label }));
+
+      async function run(name, args, message) {
+        try {
+          await adminCall(name, args);
+          if (message) toast(message);
+          await show(current);
+        } catch (error) {
+          toast(schemaHint(error));
+        }
+      }
+
+      function messageTable(rows) {
+        if (!rows || rows.length === 0) {
+          return h('p', { class: 'admin-empty', text: 'Nothing here yet.' });
+        }
+        const bodyRows = h('tbody');
+        for (const row of rows) {
+          const remove = h('button', { class: 'mini-button danger', type: 'button', text: 'Delete' });
+          remove.addEventListener('click', async () => {
+            if (!window.confirm('Delete this message for everyone?')) return;
+            await run('admin_delete_message', { p_message: row.id }, 'Message deleted.');
+          });
+          const text = (row.body || '').slice(0, 150);
+          bodyRows.append(
+            h('tr', null,
+              h('td', { text: adminDate(row.created_at) }),
+              h('td', { class: 'name', text: '@' + row.sender }),
+              h('td', { text: row.chat_label || '' }),
+              h('td', { class: 'body', title: row.body || '' },
+                text,
+                row.attachment ? h('span', { class: 'muted', text: ' 📎 ' + row.attachment }) : null,
+              ),
+              h('td', null, h('div', { class: 'admin-actions' }, remove)),
+            ),
+          );
+        }
+        return h('table', { class: 'admin-table' },
+          h('thead', null, h('tr', null,
+            ['When', 'Who', 'Where', 'Message', ''].map((label) => h('th', { text: label })),
+          )),
+          bodyRows,
+        );
+      }
+
+      async function drawOverview() {
+        const [stats, recent] = await Promise.all([
+          adminCall('admin_overview'),
+          adminCall('admin_messages', { p_limit: 15 }),
+        ]);
+        panel(
+          h('div', { class: 'admin-stats' },
+            statCard('Accounts', stats.people),
+            statCard('Chats', stats.chats),
+            statCard('Groups', stats.groups),
+            statCard('Messages', stats.messages),
+            statCard('Files', stats.files),
+            statCard('File size', formatBytes(stats.bytes)),
+            statCard('Duels', stats.duels),
+            statCard('Suspended', stats.suspended),
+          ),
+          h('div', { class: 'admin-card' },
+            h('h3', { text: 'Timeline' }),
+            h('p', { class: 'admin-note', text: 'First account: ' + adminDate(stats.first_signup) }),
+            h('p', { class: 'admin-note', text: 'Latest message: ' + adminDate(stats.last_message) }),
+          ),
+          h('div', { class: 'admin-card' },
+            h('h3', { text: 'Latest activity' }),
+            messageTable(recent),
+          ),
+        );
+      }
+
+      async function drawPeople() {
+        const people = await adminCall('admin_people');
+        const search = h('input', { placeholder: 'Search usernames', autocomplete: 'off' });
+        const rowsBox = h('tbody');
+
+        const drawRows = () => {
+          const query = search.value.trim().toLowerCase();
+          const list = people.filter((person) => !query || person.username.includes(query));
+          rowsBox.replaceChildren();
+
+          if (list.length === 0) {
+            rowsBox.append(h('tr', null, h('td', { colspan: '7' },
+              h('span', { class: 'admin-empty', text: 'No accounts match that search.' }))));
+            return;
+          }
+
+          for (const person of list) {
+            const actions = h('div', { class: 'admin-actions' });
+
+            const rename = h('button', { class: 'mini-button', type: 'button', text: 'Rename' });
+            rename.addEventListener('click', async () => {
+              const next = window.prompt(`New username for @${person.username}`, person.username);
+              if (next === null) return;
+              await run('admin_rename_user', { p_user: person.id, p_name: next }, 'Username changed.');
+            });
+
+            const password = h('button', { class: 'mini-button', type: 'button', text: 'Password' });
+            password.addEventListener('click', async () => {
+              const next = window.prompt(`New password for @${person.username} (at least 6 characters)`);
+              if (!next) return;
+              await run('admin_set_user_password', { p_user: person.id, p_password: next }, 'Password changed.');
+            });
+
+            const suspend = h('button', {
+              class: 'mini-button' + (person.suspended ? '' : ' danger'),
+              type: 'button',
+              text: person.suspended ? 'Restore' : 'Suspend',
+            });
+            suspend.addEventListener('click', async () => {
+              const next = !person.suspended;
+              const question = next
+                ? `Suspend @${person.username}? They will not be able to post until restored.`
+                : `Restore @${person.username}?`;
+              if (!window.confirm(question)) return;
+              await run('admin_suspend_user', { p_user: person.id, p_suspended: next },
+                next ? 'Account suspended.' : 'Account restored.');
+            });
+
+            const remove = h('button', { class: 'mini-button danger', type: 'button', text: 'Delete' });
+            remove.addEventListener('click', async () => {
+              const typed = window.prompt(`Type ${person.username} to delete this account for good.`);
+              if (typed === null) return;
+              if (typed.trim().toLowerCase() !== person.username) {
+                toast('That name did not match — nothing was deleted.');
+                return;
+              }
+              await run('admin_delete_user', { p_user: person.id }, 'Account deleted.');
+            });
+
+            actions.append(rename, password, suspend, remove);
+
+            rowsBox.append(
+              h('tr', null,
+                h('td', { text: adminDate(person.created_at) }),
+                h('td', { class: 'name', text: '@' + person.username }),
+                h('td', null, person.suspended ? h('span', { class: 'badge-suspended', text: 'suspended' }) : null),
+                h('td', { text: String(person.msg_count) }),
+                h('td', { text: String(person.chat_count) }),
+                h('td', { text: person.last_active ? adminDate(person.last_active) : 'never' }),
+                h('td', null, actions),
+              ),
+            );
+          }
+        };
+
+        search.addEventListener('input', drawRows);
+        drawRows();
+
+        panel(
+          h('div', { class: 'admin-card' },
+            h('h3', { text: `People · ${people.length}` }),
+            h('div', { class: 'admin-search' }, search),
+            h('table', { class: 'admin-table' },
+              h('thead', null, h('tr', null,
+                ['Joined', 'Username', '', 'Messages', 'Chats', 'Last seen', 'Actions']
+                  .map((label) => h('th', { text: label })),
+              )),
+              rowsBox,
+            ),
+          ),
+        );
+      }
+
+      async function drawChats() {
+        const chats = await adminCall('admin_chats');
+        const search = h('input', { placeholder: 'Search names or usernames', autocomplete: 'off' });
+        const rowsBox = h('tbody');
+
+        const drawRows = () => {
+          const query = search.value.trim().toLowerCase();
+          const list = chats.filter((chat) =>
+            !query
+            || (chat.name || '').toLowerCase().includes(query)
+            || String(chat.creator || '').toLowerCase().includes(query));
+          rowsBox.replaceChildren();
+
+          if (list.length === 0) {
+            rowsBox.append(h('tr', null, h('td', { colspan: '7' },
+              h('span', { class: 'admin-empty', text: 'No chats match that search.' }))));
+            return;
+          }
+
+          for (const chat of list) {
+            const remove = h('button', { class: 'mini-button danger', type: 'button', text: 'Delete' });
+            remove.addEventListener('click', async () => {
+              const label = chat.kind === 'group' ? chat.name : 'this DM';
+              if (!window.confirm(`Delete ${label} and all of its messages? This cannot be undone.`)) return;
+              await run('admin_delete_chat', { p_conversation: chat.id }, 'Chat deleted.');
+            });
+
+            rowsBox.append(
+              h('tr', null,
+                h('td', null, h('span', { class: 'admin-tag', text: chat.kind })),
+                h('td', { class: 'name', text: chat.kind === 'group' ? (chat.name || 'Group') : 'Direct message' }),
+                h('td', { text: chat.creator ? '@' + chat.creator : '—' }),
+                h('td', { text: String(chat.member_count) }),
+                h('td', { text: String(chat.msg_count) }),
+                h('td', { text: adminDate(chat.last_active || chat.created_at) }),
+                h('td', null, h('div', { class: 'admin-actions' }, remove)),
+              ),
+            );
+          }
+        };
+
+        search.addEventListener('input', drawRows);
+        drawRows();
+
+        panel(
+          h('div', { class: 'admin-card' },
+            h('h3', { text: `Chats · ${chats.length}` }),
+            h('div', { class: 'admin-search' }, search),
+            h('table', { class: 'admin-table' },
+              h('thead', null, h('tr', null,
+                ['Type', 'Name', 'Creator', 'Members', 'Messages', 'Last active', 'Actions']
+                  .map((label) => h('th', { text: label })),
+              )),
+              rowsBox,
+            ),
+          ),
+        );
+      }
+
+      async function drawMessages() {
+        const search = h('input', { placeholder: 'Search messages, filenames or usernames', autocomplete: 'off' });
+        const holder = h('div', { class: 'admin-loading', text: 'Loading…' });
+        let timer = null;
+
+        const load = async () => {
+          holder.replaceChildren(h('p', { class: 'admin-loading', text: 'Searching…' }));
+          try {
+            const rows = await adminCall('admin_messages', {
+              p_search: search.value.trim() || null,
+              p_limit: 300,
+            });
+            holder.replaceChildren(messageTable(rows));
+          } catch (error) {
+            holder.replaceChildren(h('p', { class: 'admin-empty', text: schemaHint(error) }));
+          }
+        };
+
+        search.addEventListener('input', () => {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(load, 250);
+        });
+
+        panel(
+          h('div', { class: 'admin-card' },
+            h('h3', { text: 'Every message' }),
+            h('div', { class: 'admin-search' }, search),
+            holder,
+          ),
+        );
+        await load();
+      }
+
+      async function show(tab) {
+        current = tab;
+        state.admin.tab = tab;
+        Object.entries(tabNodes).forEach(([id, node]) => node.classList.toggle('active', id === tab));
+        body.replaceChildren(h('div', { class: 'admin-loading', text: 'Loading…' }));
+        try {
+          if (tab === 'overview') await drawOverview();
+          else if (tab === 'people') await drawPeople();
+          else if (tab === 'chats') await drawChats();
+          else await drawMessages();
+        } catch (error) {
+          body.replaceChildren(h('p', { class: 'admin-empty', text: schemaHint(error) }));
+        }
+      }
+
+      show('overview');
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  11. BOOT
+    // ════════════════════════════════════════════════════════════════════
+    async function boot() {
+      const config = loadConfig();
+      if (!config) {
+        renderSetup();
+        return;
+      }
+
+      state.sb = window.supabase.createClient(config.url, config.anonKey, {
+        auth: {
+          storage,
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+        },
+      });
+
+      let handledUserId = null;
+
+      state.sb.auth.onAuthStateChange(async (_event, session) => {
+        state.session = session;
+        if (!session) {
+          if (handledUserId) {
+            handledUserId = null;
+            leaveApp();
+            renderAuth();
+          }
+          return;
+        }
+        if (handledUserId === session.user.id) return;
+        handledUserId = session.user.id;
+        await enterApp();
+      });
+
+      const { data } = await state.sb.auth.getSession();
+      if (data.session) {
+        state.session = data.session;
+        // onAuthStateChange may already have started the app; don't do it twice.
+        if (handledUserId !== data.session.user.id) {
+          handledUserId = data.session.user.id;
+          await enterApp();
+        }
+      } else if (!handledUserId) {
+        renderAuth();
+      }
+    }
+
+    // A secret knock: type it anywhere to reach the owner console.
+    let knockBuffer = '';
+    document.addEventListener('keydown', (event) => {
+      if (typeof event.key !== 'string' || event.key.length !== 1) return;
+      const field = event.target;
+      // Never listen while a password box has focus, or the knock could leak.
+      if (field && field.tagName === 'INPUT' && field.type === 'password') return;
+      knockBuffer = (knockBuffer + event.key).slice(-ADMIN_KNOCK.length);
+      if (knockBuffer === ADMIN_KNOCK) {
+        knockBuffer = '';
+        openAdminGate();
+      }
+    });
+
+    boot().catch((error) => {
+      console.error(error);
+      renderSetup(friendlyError(error, 'Could not start the app.'));
+    });
+  })();
+  </script>
+
+  <!-- Decoration only: custom cursor + orb parallax. Safe to delete. -->
+  <script>
+  (() => {
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced || matchMedia('(hover: none)').matches) return;
+
+    const cursor = document.querySelector('.cursor-dot');
+    const orbs = [...document.querySelectorAll('.orb')];
+    if (!cursor) return;
+
+    document.body.classList.add('has-cursor');
+    let mx = innerWidth / 2, my = innerHeight / 2, cx = mx, cy = my;
+
+    const hoverSelector = 'button, a, .conversation, .person, .avatar';
+
+    // Derive the hover state from the pointer position each move, so a button
+    // that vanishes mid-click can never leave the cursor stuck enlarged.
+    addEventListener('mousemove', (e) => {
+      mx = e.clientX;
+      my = e.clientY;
+      const under = document.elementFromPoint(mx, my);
+      cursor.classList.toggle('hover', Boolean(under && under.closest(hoverSelector)));
+    }, { passive: true });
+
+    const speeds = [26, -18, 14];
+    let frame = 0;
+    const loop = () => {
+      frame = requestAnimationFrame(loop);
+      cx += (mx - cx) * 0.14;
+      cy += (my - cy) * 0.14;
+      cursor.style.transform = `translate(${cx - cursor.offsetWidth / 2}px, ${cy - cursor.offsetHeight / 2}px)`;
+      const nx = (mx / innerWidth - 0.5) * 2;
+      const ny = (my / innerHeight - 0.5) * 2;
+      orbs.forEach((orb, i) => {
+        const strength = speeds[i] || 10;
+        orb.style.translate = `${nx * strength}px ${ny * strength}px`;
+      });
+    };
+    loop();
+
+    // Stop the animation loop when the tab is hidden.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) cancelAnimationFrame(frame);
+      else loop();
+    });
+  })();
+  </script>
+</body>
+</html>
